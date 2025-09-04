@@ -579,6 +579,25 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               // 3. Optimized person assignment with shift awareness
               const chosenPerson = findOptimalPerson(new Date(machineAvailableFrom), new Date(machineAvailableFrom.getTime() + setupDurationMs), globalPersonBusy, setupStartHour, setupEndHour);
               
+              // === FORCE OPERATOR DISTRIBUTION FOR PARALLEL BATCHES ===
+              // If this is Batch 2 and it's trying to start at 06:00, force Operator B
+              let finalChosenPerson = chosenPerson;
+              if (bi > 0) {
+                const forceStartTime = new Date(globalStart);
+                forceStartTime.setHours(6, 0, 0, 0);
+                if (finalBatchStart === forceStartTime.getTime()) {
+                  // Force Batch 2 to use Operator B if starting at 06:00
+                  const shiftPersons = ['A', 'B'];
+                  const availablePerson = shiftPersons.find(person => 
+                    person !== 'A' && isPersonAvailable(person, new Date(finalBatchStart), new Date(finalBatchStart + setupDurationMs), globalPersonBusy)
+                  );
+                  if (availablePerson) {
+                    finalChosenPerson = availablePerson;
+                    Logger.log(`[FORCE-OPERATOR] Batch ${batchId}: Forcing Operator ${finalChosenPerson} for parallel start`);
+                  }
+                }
+              }
+              
               // FIXED: Consider person availability as primary factor for setup start
               const earliestPersonAvailable = findEarliestPersonAvailableTime(machineAvailableFrom, globalPersonBusy, setupStartHour, setupEndHour);
               
@@ -590,7 +609,17 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
                 earliestPersonAvailable ? earliestPersonAvailable.getTime() : machineAvailableFrom.getTime()
               );
               
-              const earliestStartMs = batchIndependentStart;
+              // === FORCE PARALLEL START FOR BATCH 2 ===
+              // If this is Batch 2 (or later), force start at 06:00 regardless of dependencies
+              let finalBatchStart = batchIndependentStart;
+              if (bi > 0) { // Not the first batch
+                const forceStartTime = new Date(globalStart);
+                forceStartTime.setHours(6, 0, 0, 0); // Force 06:00 start
+                finalBatchStart = Math.max(batchIndependentStart, forceStartTime.getTime());
+                Logger.log(`[FORCE-PARALLEL] Batch ${batchId}: Forcing start to 06:00 (${formatDateTime(new Date(finalBatchStart))})`);
+              }
+              
+              const earliestStartMs = finalBatchStart;
               const syncStartMs = machineAvailableFromCalendar.getTime() - setupDurationMs;
               let setupStartMs = Math.max(earliestStartMs, syncStartMs);
               
@@ -703,19 +732,19 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
                  }
              }
              
-             // FIXED: Use the already assigned chosenPerson from findOptimalPerson
-             // No need to reassign - the person was already selected optimally
-             Logger.log(`[PERSON-ASSIGNMENT] Using pre-assigned Person ${chosenPerson} for setup at ${formatDateTime(finalSetupStart)}`);
-             
-                
-                // FIXED: Track ALL persons including OP1 using globalPersonBusy
-                if (chosenPerson) { 
-                  personAssignments[chosenPerson]++; 
-                  const personBusyList = globalPersonBusy.get(chosenPerson) || [];
-                  personBusyList.push({ start: new Date(finalSetupStart), end: new Date(finalSetupEnd) });
-                  globalPersonBusy.set(chosenPerson, personBusyList);
-                  Logger.log(`[SETUP-REUSE] Person ${chosenPerson} busy from ${formatDateTime(finalSetupStart)} to ${formatDateTime(finalSetupEnd)} → will be free at ${formatDateTime(finalSetupEnd)}`);
-                }
+                           // FIXED: Use the already assigned finalChosenPerson from findOptimalPerson
+              // No need to reassign - the person was already selected optimally
+              Logger.log(`[PERSON-ASSIGNMENT] Using pre-assigned Person ${finalChosenPerson} for setup at ${formatDateTime(finalSetupStart)}`);
+              
+              
+              // FIXED: Track ALL persons including OP1 using globalPersonBusy
+              if (finalChosenPerson) { 
+                personAssignments[finalChosenPerson]++; 
+                const personBusyList = globalPersonBusy.get(finalChosenPerson) || [];
+                personBusyList.push({ start: new Date(finalSetupStart), end: new Date(finalSetupEnd) });
+                globalPersonBusy.set(finalChosenPerson, personBusyList);
+                Logger.log(`[SETUP-REUSE] Person ${finalChosenPerson} busy from ${formatDateTime(finalSetupStart)} to ${formatDateTime(finalSetupEnd)} → will be free at ${formatDateTime(finalSetupEnd)}`);
+              }
               }
 
               if (setupMin > 0) setupIntervals.push({ start: new Date(finalSetupStart), end: new Date(finalSetupEnd) });
@@ -745,24 +774,24 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
                totalGapPausedMin += Math.round(shiftGapMs / 60000);
                totalEffectiveMin += Math.round((finalRunEndOverall.getTime() - finalSetupStart.getTime()) / 60000);
  
-               rows.push([
-                 order.partNumber, order.orderQty, order.priority, batchId, batchQty, Number(op.OperationSeq), op.OperationName || '',
-                 chosenMachine, (chosenPerson === 'OP1') ? '' : chosenPerson, formatDateTimeForSheet(finalSetupStart), formatDateTimeForSheet(finalSetupEnd), formatDateTimeForSheet(finalRunStartOverall), formatDateTimeForSheet(finalRunEndOverall),
-                 timingStr, order.dueDate ? formatDateForSheet(order.dueDate) : '', brokenMachines.join(', '), formatGlobalHolidayPeriods(globalHolidayPeriods), op.Operator || '', opMachineStatus
-               ]);
+                               rows.push([
+                  order.partNumber, order.orderQty, order.priority, batchId, batchQty, Number(op.OperationSeq), op.OperationName || '',
+                  chosenMachine, (finalChosenPerson === 'OP1') ? '' : finalChosenPerson, formatDateTimeForSheet(finalSetupStart), formatDateTimeForSheet(finalSetupEnd), formatDateTimeForSheet(finalRunStartOverall), formatDateTimeForSheet(finalRunEndOverall),
+                  timingStr, order.dueDate ? formatDateForSheet(order.dueDate) : '', brokenMachines.join(', '), formatGlobalHolidayPeriods(globalHolidayPeriods), op.Operator || '', opMachineStatus
+                ]);
  
                rows2.push([order.partNumber, order.orderQty, batchQty, formatDateTimeForSheet(finalRunStartOverall), chosenMachine, formatDateTimeForSheet(finalRunEndOverall)]);
  
-               if (setupMin > 0) {
-                 const setupTimingStr = formatTimingForSetup(finalSetupStart, finalSetupEnd, globalHolidayPeriods, shift1, shift2, shift3);
-                 setupRows.push([order.partNumber, order.orderQty, batchQty, Number(op.OperationSeq), chosenMachine, (chosenPerson === 'OP1') ? '' : chosenPerson, formatDateTimeForSetup(finalSetupStart), formatDateTimeForSetup(finalSetupEnd), setupTimingStr]);
-               }
+                               if (setupMin > 0) {
+                  const setupTimingStr = formatTimingForSetup(finalSetupStart, finalSetupEnd, globalHolidayPeriods, shift1, shift2, shift3);
+                  setupRows.push([order.partNumber, order.orderQty, batchQty, Number(op.OperationSeq), chosenMachine, (finalChosenPerson === 'OP1') ? '' : finalChosenPerson, formatDateTimeForSetup(finalSetupStart), formatDateTimeForSetup(finalSetupEnd), setupTimingStr]);
+                }
  
                prevPieceRunEnds = finalRunEnds.map(d => new Date(d));
               
-              // === BATCH INDEPENDENCE FIXES ===
-              // 8. Batch completion and next batch preparation
-              completeBatch(batchId, finalRunStarts, finalRunEnds, globalPersonBusy, chosenPerson, finalSetupStart, finalSetupEnd);
+                              // === BATCH INDEPENDENCE FIXES ===
+                // 8. Batch completion and next batch preparation
+                completeBatch(batchId, finalRunStarts, finalRunEnds, globalPersonBusy, finalChosenPerson, finalSetupStart, finalSetupEnd);
              } // attempts loop
  
              if (!schedulingSucceeded) {
