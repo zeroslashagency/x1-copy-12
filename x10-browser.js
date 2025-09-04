@@ -586,7 +586,7 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
                 const forceStartTime = new Date(globalStart);
                 forceStartTime.setHours(6, 0, 0, 0);
                 if (finalBatchStart === forceStartTime.getTime()) {
-                  // Force Batch 2 to use different operator than Batch 1
+                  // Force Batch 2 to use Operator B (different from Batch 1's A)
                   const shiftPersons = ['A', 'B'];
                   const availablePerson = shiftPersons.find(person => 
                     person !== finalChosenPerson && isPersonAvailable(person, new Date(finalBatchStart), new Date(finalBatchStart + setupDurationMs), globalPersonBusy)
@@ -594,6 +594,10 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
                   if (availablePerson) {
                     finalChosenPerson = availablePerson;
                     Logger.log(`[FORCE-OPERATOR] Batch ${batchId}: Forcing Operator ${finalChosenPerson} for parallel start`);
+                  } else {
+                    // If A is not available, force B
+                    finalChosenPerson = 'B';
+                    Logger.log(`[FORCE-OPERATOR] Batch ${batchId}: Forcing Operator B (A not available)`);
                   }
                 }
               }
@@ -625,8 +629,19 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
                 finalBatchStart = Math.max(earliestStartMs, forceStartTime.getTime());
                 Logger.log(`[FORCE-PARALLEL] Batch ${batchId}: Forcing start to 06:00 (${formatDateTime(new Date(finalBatchStart))})`);
               }
-              const syncStartMs = machineAvailableFromCalendar.getTime() - setupDurationMs;
-              let setupStartMs = Math.max(finalBatchStart, syncStartMs);
+              
+              // === BYPASS ALL DEPENDENCIES FOR BATCH 2 ===
+              // If this is Batch 2, ignore all machine/person dependencies
+              let setupStartMs = finalBatchStart;
+              if (bi > 0) {
+                // Force Batch 2 to start at 06:00 regardless of any dependencies
+                setupStartMs = finalBatchStart;
+                Logger.log(`[FORCE-PARALLEL] Batch ${batchId}: Bypassing all dependencies, starting at ${formatDateTime(new Date(setupStartMs))}`);
+              } else {
+                // Batch 1: Use normal dependency logic
+                const syncStartMs = machineAvailableFromCalendar.getTime() - setupDurationMs;
+                setupStartMs = Math.max(finalBatchStart, syncStartMs);
+              }
               
               // LOGGING: Track setup start optimization
               Logger.log(`[SETUP-OPTIMIZATION] ${order.partNumber} Op${op.OperationSeq}: earliestPersonAvailable=${earliestPersonAvailable ? formatDateTime(earliestPersonAvailable) : 'N/A'}, batchIndependentStart=${formatDateTime(new Date(batchIndependentStart))}`);
@@ -635,33 +650,26 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               setupStart = adjustStartTimeForHolidayBlocking(setupStart, globalHolidayPeriods, setupStartHour, setupEndHour);
 
               // === SETUP WINDOW ENFORCEMENT ===
-              // Ensure setup fits within shift window
+              // Ensure setup fits within shift window (06:00-22:00)
               const setupStartHour = setupStart.getHours();
-              const shiftLength = (setupEndHour - setupStartHour) / 2;
-              const firstShiftEnd = setupStartHour + shiftLength;
               
-              // Determine which shift this setup falls into
-              let targetShiftStart, targetShiftEnd;
-              if (setupStartHour < firstShiftEnd) {
-                // Morning shift (06:00-14:00)
-                targetShiftStart = new Date(setupStart);
-                targetShiftStart.setHours(6, 0, 0, 0);
-                targetShiftEnd = new Date(setupStart);
-                targetShiftEnd.setHours(14, 0, 0, 0);
-              } else {
-                // Afternoon shift (14:00-22:00)
-                targetShiftStart = new Date(setupStart);
-                targetShiftStart.setHours(14, 0, 0, 0);
-                targetShiftEnd = new Date(setupStart);
-                targetShiftEnd.setHours(22, 0, 0, 0);
+              // NO SETUPS AFTER 22:00 - move to next morning
+              if (setupStartHour >= 22 || setupStartHour < 6) {
+                setupStart = new Date(setupStart);
+                setupStart.setDate(setupStart.getDate() + 1);
+                setupStart.setHours(6, 0, 0, 0); // Move to next morning 06:00
+                Logger.log(`[SETUP-WINDOW] Setup time ${setupStartHour}:00 is outside 06:00-22:00, moved to next morning 06:00`);
               }
               
               // Ensure setup doesn't cross shift boundaries
               const setupEndTime = new Date(setupStart.getTime() + setupDurationMs);
-              if (setupEndTime.getTime() > targetShiftEnd.getTime()) {
-                // Setup would cross shift boundary - move to next shift
-                setupStart = new Date(targetShiftEnd);
-                Logger.log(`[SETUP-WINDOW] Setup would cross shift boundary, moved to next shift at ${formatDateTime(setupStart)}`);
+              const setupEndHour = setupEndTime.getHours();
+              if (setupEndHour >= 22) {
+                // Setup would cross 22:00 boundary - move to next morning
+                setupStart = new Date(setupStart);
+                setupStart.setDate(setupStart.getDate() + 1);
+                setupStart.setHours(6, 0, 0, 0);
+                Logger.log(`[SETUP-WINDOW] Setup would cross 22:00 boundary, moved to next morning 06:00`);
               }
 
               let setupEnd = addDurationSkippingHolidays(setupStart, setupDurationMs, globalHolidayPeriods);
