@@ -292,6 +292,157 @@ class FixedUnifiedSchedulingEngine {
   }
 }
 
+/* === BATCH INDEPENDENCE FIXES === */
+
+// 1. Initialize batch-specific tracking at the start of batch processing
+function initializeBatchProcessing(orders, globalStart) {
+  const batchMachineCalendars = new Map(); // Separate calendar for each batch
+  const globalPersonBusy = new Map(); // Global person tracking across all batches
+  
+  // Initialize person availability tracking
+  ['A', 'B', 'C', 'D', 'OP1'].forEach(person => {
+    globalPersonBusy.set(person, []);
+  });
+  
+  return { batchMachineCalendars, globalPersonBusy };
+}
+
+// 2. Fixed machine availability calculation
+function calculateMachineAvailability(selectedMachine, validatedStart, batchMachineCal, globalMachineCal, globalStart) {
+  // For batch independence: use the LATER of batch-specific or global availability
+  const batchMachineTime = batchMachineCal[selectedMachine] || new Date(globalStart);
+  const globalMachineTime = globalMachineCal[selectedMachine] || new Date(globalStart);
+  
+  // Machine is available when BOTH batch and global constraints are satisfied
+  const machineAvailableFrom = new Date(Math.max(
+    validatedStart.getTime(),
+    batchMachineTime.getTime(),
+    globalMachineTime.getTime()
+  ));
+  
+  return machineAvailableFrom;
+}
+
+// 3. Optimized person assignment with shift awareness
+function findOptimalPerson(setupStart, setupEnd, globalPersonBusy, setupStartHour, setupEndHour) {
+  const setupHour = setupStart.getHours();
+  
+  // Determine shift based on setup time
+  let shiftPersons;
+  if (setupHour >= 6 && setupHour < 14) {
+    shiftPersons = ['A', 'B']; // Morning shift
+  } else if (setupHour >= 14 && setupHour < 22) {
+    shiftPersons = ['C', 'D']; // Afternoon shift
+  } else {
+    shiftPersons = ['A', 'B']; // Default to morning shift for edge cases
+  }
+  
+  // Check for immediately available person (optimization for reuse)
+  for (const person of shiftPersons) {
+    if (isPersonAvailable(person, setupStart, setupEnd, globalPersonBusy)) {
+      return person;
+    }
+  }
+  
+  // If no one immediately available, find the earliest available
+  let earliestAvailable = null;
+  let earliestTime = null;
+  
+  for (const person of shiftPersons) {
+    const availableTime = getPersonNextAvailableTime(person, setupStart, globalPersonBusy);
+    if (!earliestTime || availableTime.getTime() < earliestTime.getTime()) {
+      earliestTime = availableTime;
+      earliestAvailable = person;
+    }
+  }
+  
+  return earliestAvailable;
+}
+
+// 4. Check if person is available during setup window
+function isPersonAvailable(person, setupStart, setupEnd, globalPersonBusy) {
+  const busyPeriods = globalPersonBusy.get(person) || [];
+  if (busyPeriods.length === 0) return true; // Never busy, always available
+  
+  // Check if person is free during setup window
+  return !busyPeriods.some(period => {
+    const periodStart = new Date(period.start);
+    const periodEnd = new Date(period.end);
+    return !(setupStart.getTime() >= periodEnd.getTime() || setupEnd.getTime() <= periodStart.getTime());
+  });
+}
+
+// 5. Get next available time for a person
+function getPersonNextAvailableTime(person, setupStart, globalPersonBusy) {
+  const busyPeriods = globalPersonBusy.get(person) || [];
+  if (busyPeriods.length === 0) return setupStart; // Never busy, available immediately
+  
+  // Find the latest busy period that overlaps with setup start
+  let latestBusyEnd = setupStart;
+  for (const period of busyPeriods) {
+    const periodEnd = new Date(period.end);
+    if (periodEnd.getTime() > latestBusyEnd.getTime()) {
+      latestBusyEnd = periodEnd;
+    }
+  }
+  
+  return latestBusyEnd;
+}
+
+// 6. Updated machine calendar management
+function updateMachineCalendars(chosenMachine, finalRunEndOverall, batchMachineCal, globalMachineCal, batchId, globalStart) {
+  // Update batch-specific calendar
+  batchMachineCal[chosenMachine] = new Date(finalRunEndOverall);
+  
+  // Update global calendar ONLY if this batch finishes later than currently recorded
+  const currentGlobalTime = globalMachineCal[chosenMachine] || new Date(globalStart);
+  if (finalRunEndOverall.getTime() > currentGlobalTime.getTime()) {
+    globalMachineCal[chosenMachine] = new Date(finalRunEndOverall);
+  }
+  
+  Logger.log(`[MACHINE-CALENDAR] Batch ${batchId}: Updated ${chosenMachine} batch calendar to ${formatDateTime(finalRunEndOverall)}`);
+}
+
+// 7. Fixed operation dependency logic
+function calculateOperationStart(prevPieceRunEnds, machineAvailableTime, setupEnd, batchId, operationSeq) {
+  if (operationSeq === 1) {
+    // First operation: only wait for setup and machine availability
+    return new Date(Math.max(setupEnd.getTime(), machineAvailableTime.getTime()));
+  } else {
+    // Subsequent operations: wait for first piece from previous operation
+    const prevFirstPieceDone = (prevPieceRunEnds && prevPieceRunEnds.length > 0) ? 
+      new Date(prevPieceRunEnds[0]) : setupEnd;
+    
+    return new Date(Math.max(
+      prevFirstPieceDone.getTime(),
+      machineAvailableTime.getTime(),
+      setupEnd.getTime()
+    ));
+  }
+}
+
+// 8. Batch completion and next batch preparation
+function completeBatch(batchId, finalRunStarts, finalRunEnds, globalPersonBusy, chosenPerson, finalSetupStart, finalSetupEnd) {
+  // Update global person busy times
+  if (chosenPerson && chosenPerson !== 'OP1') {
+    const personBusyList = globalPersonBusy.get(chosenPerson) || [];
+    personBusyList.push({
+      start: new Date(finalSetupStart),
+      end: new Date(finalSetupEnd),
+      batchId: batchId,
+      type: 'setup'
+    });
+    globalPersonBusy.set(chosenPerson, personBusyList);
+  }
+  
+  Logger.log(`[BATCH-${batchId}] Completed - Machine available for parallel batches`);
+  
+  return {
+    runStarts: finalRunStarts.map(d => new Date(d)),
+    runEnds: finalRunEnds.map(d => new Date(d))
+  };
+}
+
 /* === BROWSER-COMPATIBLE MAIN SCHEDULING FUNCTION === */
 function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
   const startTime = new Date();
@@ -316,13 +467,17 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
 
     Logger.log(`Processing ${orders.length} orders with ${globalHolidayPeriods.length} holiday periods`);
 
-    const machineCal = initializeMachineCalendar(db, globalStart);
-    const setupIntervals = [];
-    const personBusy = { 'A': [], 'B': [], 'C': [], 'D': [], 'OP1': [] };
-    const personAssignments = { 'A': 0, 'B': 0, 'C': 0, 'D': 0, 'OP1': 0 };
+    // === BATCH INDEPENDENCE FIXES ===
+    // 1. Initialize batch-specific tracking at the start of batch processing
+    const { batchMachineCalendars, globalPersonBusy } = initializeBatchProcessing(orders, globalStart);
+    const globalMachineCal = initializeMachineCalendar(db, globalStart);
+    
+    Logger.log(`[BATCH-INDEPENDENCE] Initialized ${batchMachineCalendars.size} batch calendars and global person tracking`);
     const rows = [], rows2 = [], setupRows = [];
     let globalBatchCounter = 1;
     let totalEffectiveMin = 0, totalHolidayPausedMin = 0, totalGapPausedMin = 0;
+    const setupIntervals = [];
+    const personAssignments = { 'A': 0, 'B': 0, 'C': 0, 'D': 0, 'OP1': 0 };
 
     // Early gap calculation
     const shift3EndStr = shift3.split('-')[1].trim();
@@ -352,19 +507,19 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
         const batchQty = batches[bi];
         const batchId = `B${String(globalBatchCounter).padStart(2, '0')}`; globalBatchCounter++;
         
-        // BATCH INDEPENDENCE: Each batch starts fresh, independent of previous batches
-        let nextOpEarliest = new Date(globalStart);
+        // === BATCH INDEPENDENCE FIXES ===
+        // 2. Fixed batch loop initialization
+        let nextOpEarliest = new Date(globalStart); // Fresh start for each batch
         let prevPieceRunEnds = null;
-
-        // PARALLEL BATCH EVALUATION: Check if this batch can start immediately
-        const availableResources = evaluateBatchResources(order, batchId, ops, machineCal, personBusy, setupStartHour, setupEndHour, globalStart);
-        if (availableResources.canStartImmediately) {
-          Logger.log(`[BATCH-INDEPENDENCE] ${order.partNumber} Batch${batchId}: Starting immediately with ${availableResources.availableMachines.length} machines and ${availableResources.availablePersons.length} persons`);
-          nextOpEarliest = new Date(globalStart);
-        } else {
-          Logger.log(`[BATCH-INDEPENDENCE] ${order.partNumber} Batch${batchId}: Waiting for resources - earliest start: ${formatDateTime(availableResources.earliestStart)}`);
-          nextOpEarliest = availableResources.earliestStart;
+        
+        // Use batch-specific machine calendar, NOT global one
+        const batchMachineKey = `batch_${batchId}`;
+        if (!batchMachineCalendars.has(batchMachineKey)) {
+          batchMachineCalendars.set(batchMachineKey, {});
         }
+        const batchMachineCal = batchMachineCalendars.get(batchMachineKey);
+        
+        Logger.log(`[BATCH-${batchId}] Starting independent batch processing at ${formatDateTime(nextOpEarliest)}`);
 
         for (let opi = 0; opi < ops.length; opi++) {
           const op = ops[opi];
@@ -400,34 +555,35 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               schedulingAttempts++;
               checkTimeout();
 
-              const machineResult = fixedEngine.selectMachineWithContinuousValidation(operationStartEstimate, estimatedEnd, eligibleMachines, machineCal, { partNumber: order.partNumber, operationSeq: op.OperationSeq, batchId: batchId, orderQty: order.orderQty, batchQty: batchQty });
+              const machineResult = fixedEngine.selectMachineWithContinuousValidation(operationStartEstimate, estimatedEnd, eligibleMachines, batchMachineCal, { partNumber: order.partNumber, operationSeq: op.OperationSeq, batchId: batchId, orderQty: order.orderQty, batchQty: batchQty });
               if (!machineResult.success) { schedulingError = machineResult.error || 'No available machine after validation attempts'; break; }
               const { selectedMachine, startTime: validatedStart } = machineResult;
               opMachineResultMeta = machineResult;
 
-              // BATCH INDEPENDENCE: Force machine selection to be independent of other batches
-              // Only consider machine availability, not other batch dependencies
-              const independentMachineStart = new Date(Math.max(
-                validatedStart.getTime(),
-                machineCal[selectedMachine] ? machineCal[selectedMachine].getTime() : new Date(globalStart).getTime()
-              ));
+              // === BATCH INDEPENDENCE FIXES ===
+              // 2. Fixed machine availability calculation
+              const machineAvailableFrom = calculateMachineAvailability(selectedMachine, validatedStart, batchMachineCal, globalMachineCal, globalStart);
               
-              Logger.log(`[BATCH-INDEPENDENCE] ${order.partNumber} Batch${batchId} Op${op.OperationSeq}: Machine ${selectedMachine} independent start at ${formatDateTime(independentMachineStart)}`);
+              Logger.log(`[BATCH-INDEPENDENCE] ${order.partNumber} Batch${batchId} Op${op.OperationSeq}: Machine ${selectedMachine} available from ${formatDateTime(machineAvailableFrom)}`);
 
               // ===== Enforcement: SetupStart must not be earlier than previous operation's FIRST-PIECE completion
               const prevFirstPieceDone = (prevPieceRunEnds && prevPieceRunEnds.length > 0) ? new Date(prevPieceRunEnds[0]) : null;
-              const machineAvailableFromCalendar = machineCal[selectedMachine] || new Date(globalStart);
+              const machineAvailableFromCalendar = machineAvailableFrom;
               const setupDurationMs = setupMin * 60 * 1000;
 
+              // === BATCH INDEPENDENCE FIXES ===
+              // 3. Optimized person assignment with shift awareness
+              const chosenPerson = findOptimalPerson(new Date(machineAvailableFrom), new Date(machineAvailableFrom.getTime() + setupDurationMs), globalPersonBusy, setupStartHour, setupEndHour);
+              
               // FIXED: Consider person availability as primary factor for setup start
-              const earliestPersonAvailable = findEarliestPersonAvailableTime(independentMachineStart, personBusy, setupStartHour, setupEndHour);
+              const earliestPersonAvailable = findEarliestPersonAvailableTime(machineAvailableFrom, globalPersonBusy, setupStartHour, setupEndHour);
               
               // BATCH INDEPENDENCE: Don't force Batch-2 to wait for Batch-1 completion
               // Only wait for first piece from previous operation, not entire batch completion
               const batchIndependentStart = Math.max(
-                independentMachineStart.getTime(), 
-                prevFirstPieceDone ? prevFirstPieceDone.getTime() : independentMachineStart.getTime(),
-                earliestPersonAvailable ? earliestPersonAvailable.getTime() : independentMachineStart.getTime()
+                machineAvailableFrom.getTime(), 
+                prevFirstPieceDone ? prevFirstPieceDone.getTime() : machineAvailableFrom.getTime(),
+                earliestPersonAvailable ? earliestPersonAvailable.getTime() : machineAvailableFrom.getTime()
               );
               
               const earliestStartMs = batchIndependentStart;
@@ -501,7 +657,7 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               const needsSetupPerson = setupMin > 0 && op.Operator !== 1;
               if (needsSetupPerson) {
                 // CONCURRENT SETUP LIMITING: Check if shift capacity allows another setup
-                const shiftCapacity = checkShiftCapacity(finalSetupStart, personBusy, setupStartHour, setupEndHour);
+                const shiftCapacity = checkShiftCapacity(finalSetupStart, globalPersonBusy, setupStartHour, setupEndHour);
                 if (!shiftCapacity.canAddSetup) {
                   Logger.log(`[SHIFT-CAPACITY] ${order.partNumber} Batch${batchId} Op${op.OperationSeq}: Shift at capacity (${shiftCapacity.currentSetups}/2), waiting until ${formatDateTime(shiftCapacity.nextAvailableTime)}`);
                  // Reschedule to next available time
@@ -514,12 +670,12 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
              }
              
              // OPTIMIZATION: Check for immediate person reuse from previous operations
-             const immediateReusePerson = findImmediateReusePerson(finalSetupStart, personBusy, personAssignments, setupStartHour, setupEndHour);
+             const immediateReusePerson = findImmediateReusePerson(finalSetupStart, globalPersonBusy, personAssignments, setupStartHour, setupEndHour);
              if (immediateReusePerson) {
                  chosenPerson = immediateReusePerson;
                  Logger.log(`[OPTIMIZATION] Immediate reuse of Person ${chosenPerson} for setup at ${formatDateTime(finalSetupStart)}`);
              } else {
-                 chosenPerson = assignSetupPerson(finalSetupStart, finalSetupEnd, personBusy, personAssignments, setupStartHour, setupEndHour);
+                 chosenPerson = assignSetupPerson(finalSetupStart, finalSetupEnd, globalPersonBusy, personAssignments, setupStartHour, setupEndHour);
              }
              
                 
@@ -533,12 +689,9 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
 
               if (setupMin > 0) setupIntervals.push({ start: new Date(finalSetupStart), end: new Date(finalSetupEnd) });
 
-              // BATCH INDEPENDENCE: Only update machine calendar for the specific machine used, not all machines
-              // This allows other machines to remain available for parallel batch processing
-              machineCal[chosenMachine] = new Date(finalRunEndOverall);
-              
-              // LOGGING: Track machine calendar updates
-              Logger.log(`[MACHINE-CALENDAR] ${order.partNumber} Batch${batchId} Op${op.OperationSeq}: Updated ${chosenMachine} calendar to ${formatDateTime(finalRunEndOverall)}`);
+              // === BATCH INDEPENDENCE FIXES ===
+              // 6. Updated machine calendar management
+              updateMachineCalendars(chosenMachine, finalRunEndOverall, batchMachineCal, globalMachineCal, batchId, globalStart);
               
               // FIXED: nextOpEarliest should only be updated for the NEXT operation within the SAME batch
               // Not for the next batch, which should be independent
@@ -552,61 +705,61 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
                 Logger.log(`[BATCH-INDEPENDENCE] ${order.partNumber} Batch${batchId}: Reset nextOpEarliest to ${formatDateTime(globalStart)} for next batch independence`);
               }
 
-              // TIMING (rules from user) - OPTIMIZED
-              const timingStr = formatTimingForOperation(finalSetupStart, finalRunStartOverall, finalRunEndOverall, globalHolidayPeriods, shift1, shift2, shift3);
+               // TIMING (rules from user)
+               const timingStr = formatTimingForOperation(finalSetupStart, finalRunStartOverall, finalRunEndOverall, globalHolidayPeriods, shift1, shift2, shift3);
 
-              // OPTIMIZATION: Check if due date is achievable with better resource allocation
-              const dueDateAchievable = checkDueDateAchievability(order.dueDate, finalRunEndOverall, globalHolidayPeriods, [shift1, shift2, shift3]);
-              const dueDateStatus = order.dueDate ? (dueDateAchievable ? '✅' : '⚠️') : '';
-
-              const holidayPauseMs = (globalHolidayPeriods && globalHolidayPeriods.length > 0) ? computeHolidayOverlapMs(finalRunStartOverall, finalRunEndOverall, globalHolidayPeriods) : 0;
-              const shiftGapMs = computeShiftGapMs(finalRunStartOverall, finalRunEndOverall, [shift1, shift2, shift3]);
-              totalHolidayPausedMin += Math.round(holidayPauseMs / 60000);
-              totalGapPausedMin += Math.round(shiftGapMs / 60000);
-              totalEffectiveMin += Math.round((finalRunEndOverall.getTime() - finalSetupStart.getTime()) / 60000);
-
-              rows.push([
-                order.partNumber, order.orderQty, order.priority, batchId, batchQty, Number(op.OperationSeq), op.OperationName || '',
-                chosenMachine, (chosenPerson === 'OP1') ? '' : chosenPerson, formatDateTimeForBrowser(finalSetupStart), formatDateTimeForBrowser(finalSetupEnd), formatDateTimeForBrowser(finalRunStartOverall), formatDateTimeForBrowser(finalRunEndOverall),
-                timingStr, order.dueDate ? formatDateForBrowser(order.dueDate) : '', brokenMachines.join(', '), formatGlobalHolidayPeriods(globalHolidayPeriods), op.Operator || '', opMachineStatus
-              ]);
-
-              rows2.push([order.partNumber, order.orderQty, batchQty, formatDateTimeForBrowser(finalRunStartOverall), chosenMachine, formatDateTimeForBrowser(finalRunEndOverall)]);
-
-              if (setupMin > 0) {
-                const setupTimingStr = formatTimingForSetup(finalSetupStart, finalSetupEnd, globalHolidayPeriods, shift1, shift2, shift3);
-                setupRows.push([order.partNumber, order.orderQty, batchQty, Number(op.OperationSeq), chosenMachine, (chosenPerson === 'OP1') ? '' : chosenPerson, formatDateTimeForSetup(finalSetupStart), formatDateTimeForSetup(finalSetupEnd), setupTimingStr]);
-              }
-
-              prevPieceRunEnds = finalRunEnds.map(d => new Date(d));
-            } // attempts loop
-
-            if (!schedulingSucceeded) {
-              Logger.log(`Failed to schedule ${order.partNumber} Op${op.OperationSeq}: ${schedulingError}`);
-              rows.push([
-                order.partNumber, order.orderQty, order.priority, batchId, batchQty, Number(op.OperationSeq), op.OperationName || '',
-                'NO AVAILABLE MACHINE', '', '', '', '', '', '',
-                order.dueDate ? formatDateForBrowser(order.dueDate) : '', brokenMachines.join(', '), formatGlobalHolidayPeriods(globalHolidayPeriods), op.Operator || '', `SCHEDULING_FAILED: ${schedulingError || 'unknown'}`
-              ]);
-              rows2.push([order.partNumber, order.orderQty, batchQty, '', 'NO AVAILABLE MACHINE', '']);
-              prevPieceRunEnds = new Array(batchQty).fill(new Date(nextOpEarliest));
-              continue;
-            }
-
-          } catch (opError) {
-            Logger.log(`Error processing operation ${order.partNumber} Op${op.OperationSeq}: ${opError.toString()}`);
-            rows.push([
-              order.partNumber, order.orderQty, order.priority, batchId, batchQty, Number(op.OperationSeq), op.OperationName || '',
-              'ERROR', '', '', '', '', '', '',
-              order.dueDate ? formatDateForBrowser(order.dueDate) : '', brokenMachines.join(', '), formatGlobalHolidayPeriods(globalHolidayPeriods), op.Operator || '', `ERROR: ${opError.toString()}`
-            ]);
-            rows2.push([order.partNumber, order.orderQty, batchQty, '', 'ERROR', '']);
-            continue;
-          }
-        } // end ops
-      } // end batches
-    } // end orders
-
+               const holidayPauseMs = (globalHolidayPeriods && globalHolidayPeriods.length > 0) ? computeHolidayOverlapMs(finalRunStartOverall, finalRunEndOverall, globalHolidayPeriods) : 0;
+               const shiftGapMs = computeShiftGapMs(finalRunStartOverall, finalRunEndOverall, [shift1, shift2, shift3]);
+               totalHolidayPausedMin += Math.round(holidayPauseMs / 60000);
+               totalGapPausedMin += Math.round(shiftGapMs / 60000);
+               totalEffectiveMin += Math.round((finalRunEndOverall.getTime() - finalSetupStart.getTime()) / 60000);
+ 
+               rows.push([
+                 order.partNumber, order.orderQty, order.priority, batchId, batchQty, Number(op.OperationSeq), op.OperationName || '',
+                 chosenMachine, (chosenPerson === 'OP1') ? '' : chosenPerson, formatDateTimeForSheet(finalSetupStart), formatDateTimeForSheet(finalSetupEnd), formatDateTimeForSheet(finalRunStartOverall), formatDateTimeForSheet(finalRunEndOverall),
+                 timingStr, order.dueDate ? formatDateForSheet(order.dueDate) : '', brokenMachines.join(', '), formatGlobalHolidayPeriods(globalHolidayPeriods), op.Operator || '', opMachineStatus
+               ]);
+ 
+               rows2.push([order.partNumber, order.orderQty, batchQty, formatDateTimeForSheet(finalRunStartOverall), chosenMachine, formatDateTimeForSheet(finalRunEndOverall)]);
+ 
+               if (setupMin > 0) {
+                 const setupTimingStr = formatTimingForSetup(finalSetupStart, finalSetupEnd, globalHolidayPeriods, shift1, shift2, shift3);
+                 setupRows.push([order.partNumber, order.orderQty, batchQty, Number(op.OperationSeq), chosenMachine, (chosenPerson === 'OP1') ? '' : chosenPerson, formatDateTimeForSetup(finalSetupStart), formatDateTimeForSetup(finalSetupEnd), setupTimingStr]);
+               }
+ 
+               prevPieceRunEnds = finalRunEnds.map(d => new Date(d));
+              
+              // === BATCH INDEPENDENCE FIXES ===
+              // 8. Batch completion and next batch preparation
+              completeBatch(batchId, finalRunStarts, finalRunEnds, globalPersonBusy, chosenPerson, finalSetupStart, finalSetupEnd);
+             } // attempts loop
+ 
+             if (!schedulingSucceeded) {
+               Logger.log(`Failed to schedule ${order.partNumber} Op${op.OperationSeq}: ${schedulingError}`);
+               rows.push([
+                 order.partNumber, order.orderQty, order.priority, batchId, batchQty, Number(op.OperationSeq), op.OperationName || '',
+                 'NO AVAILABLE MACHINE', '', '', '', '', '', '',
+                 order.dueDate ? formatDateForSheet(order.dueDate) : '', brokenMachines.join(', '), formatGlobalHolidayPeriods(globalHolidayPeriods), op.Operator || '', `SCHEDULING_FAILED: ${schedulingError || 'unknown'}`
+               ]);
+               rows2.push([order.partNumber, order.orderQty, batchQty, '', 'NO AVAILABLE MACHINE', '']);
+               prevPieceRunEnds = new Array(batchQty).fill(new Date(nextOpEarliest));
+               continue;
+             }
+ 
+           } catch (opError) {
+             Logger.log(`Error processing operation ${order.partNumber} Op${op.OperationSeq}: ${opError.toString()}`);
+             rows.push([
+               order.partNumber, order.orderQty, order.priority, batchId, batchQty, Number(op.OperationSeq), op.OperationName || '',
+               'ERROR', '', '', '', '', '', '',
+               order.dueDate ? formatDateForSheet(order.dueDate) : '', brokenMachines.join(', '), formatGlobalHolidayPeriods(globalHolidayPeriods), op.Operator || '', `ERROR: ${opError.toString()}`
+             ]);
+             rows2.push([order.partNumber, order.orderQty, batchQty, '', 'ERROR', '']);
+             continue;
+           }
+         } // end ops
+       } // end batches
+     } // end orders
+ 
     fixedEngine.validateFinalSchedule(rows);
     if (!validateOutputData(rows, rows2, setupRows)) throw new Error('Output data validation failed');
     const totalTiming = formatCleanTotal(totalEffectiveMin);
@@ -1218,7 +1371,7 @@ function formatClean(totalMinutes) {
   return parts.join(' ');
 }
 
-function checkShiftCapacity(setupStart, personBusy, setupStartHour, setupEndHour) {
+function checkShiftCapacity(setupStart, globalPersonBusy, setupStartHour, setupEndHour) {
   const setupStartDate = new Date(setupStart);
   const startH = setupStartDate.getHours();
   const shiftLength = (setupEndHour - setupStartHour) / 2;
@@ -1237,7 +1390,7 @@ function checkShiftCapacity(setupStart, personBusy, setupStartHour, setupEndHour
   let nextAvailableTime = new Date(setupStartDate);
   
   for (const person of shiftPeople) {
-    const busyPeriods = personBusy[person] || [];
+    const busyPeriods = globalPersonBusy.get(person) || [];
     for (const period of busyPeriods) {
       const periodStart = new Date(period.start);
       const periodEnd = new Date(period.end);
@@ -1378,7 +1531,7 @@ function findAvailablePersons(startTime, personBusy, setupStartHour, setupEndHou
   });
 }
 
-function findEarliestPersonAvailableTime(setupStart, personBusy, setupStartHour, setupEndHour) {
+function findEarliestPersonAvailableTime(setupStart, globalPersonBusy, setupStartHour, setupEndHour) {
   const setupStartDate = new Date(setupStart);
   const startH = setupStartDate.getHours();
   const shiftLength = (setupEndHour - setupStartHour) / 2;
@@ -1391,7 +1544,7 @@ function findEarliestPersonAvailableTime(setupStart, personBusy, setupStartHour,
   let earliestAvailable = null;
   
   for (const person of allPersons) {
-    const busyPeriods = personBusy[person] || [];
+    const busyPeriods = globalPersonBusy.get(person) || [];
     if (busyPeriods.length === 0) {
       // Person has never been busy, available from start
       return setupStartDate;
@@ -1413,7 +1566,7 @@ function findEarliestPersonAvailableTime(setupStart, personBusy, setupStartHour,
   return earliestAvailable;
 }
 
-function findImmediateReusePerson(setupStart, personBusy, personAssignments, setupStartHour, setupEndHour) {
+function findImmediateReusePerson(setupStart, globalPersonBusy, personAssignments, setupStartHour, setupEndHour) {
   const setupStartDate = new Date(setupStart);
   const startH = setupStartDate.getHours();
   const shiftLength = (setupEndHour - setupStartHour) / 2;
@@ -1422,7 +1575,7 @@ function findImmediateReusePerson(setupStart, personBusy, personAssignments, set
   
   // Find person who just finished a setup and is immediately available
   for (const person of shiftPeople) {
-    const busyPeriods = personBusy[person] || [];
+    const busyPeriods = globalPersonBusy.get(person) || [];
     if (busyPeriods.length === 0) continue;
     
     // Get the most recent busy period
@@ -1441,7 +1594,7 @@ function findImmediateReusePerson(setupStart, personBusy, personAssignments, set
   return null;
 }
 
-function assignSetupPerson(setupStart, setupEnd, personBusy, personAssignments, setupStartHour, setupEndHour) {
+function assignSetupPerson(setupStart, setupEnd, globalPersonBusy, personAssignments, setupStartHour, setupEndHour) {
   const setupStartDate = new Date(setupStart); 
   const startH = setupStartDate.getHours();
   const shiftLength = (setupEndHour - setupStartHour) / 2; 
@@ -1459,7 +1612,7 @@ function assignSetupPerson(setupStart, setupEnd, personBusy, personAssignments, 
   
   // AGGRESSIVE OPERATOR ASSIGNMENT: Find ANY available operator in the shift
   const available = shiftPeople.filter(p => {
-    const busyPeriods = personBusy[p] || [];
+    const busyPeriods = globalPersonBusy.get(p) || [];
     if (busyPeriods.length === 0) return true; // Never busy, always available
     
     // Check if person is free during setup window
@@ -1487,7 +1640,7 @@ function assignSetupPerson(setupStart, setupEnd, personBusy, personAssignments, 
   let earliestTime = new Date(globalStart);
   
   for (const person of shiftPeople) {
-    const busyPeriods = personBusy[person] || [];
+    const busyPeriods = globalPersonBusy.get(person) || [];
     if (busyPeriods.length === 0) {
       earliestAvailable = person;
       break;
