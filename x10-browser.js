@@ -463,7 +463,11 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               const needsSetupPerson = setupMin > 0 && op.Operator !== 1;
               if (needsSetupPerson) {
                 chosenPerson = assignSetupPerson(finalSetupStart, finalSetupEnd, personBusy, personAssignments, setupStartHour, setupEndHour);
-                if (chosenPerson && chosenPerson !== 'OP1') { personAssignments[chosenPerson]++; personBusy[chosenPerson].push({ start: new Date(finalSetupStart), end: new Date(finalSetupEnd) }); }
+                if (chosenPerson && chosenPerson !== 'OP1') { 
+                  personAssignments[chosenPerson]++; 
+                  personBusy[chosenPerson].push({ start: new Date(finalSetupStart), end: new Date(finalSetupEnd) }); 
+                  Logger.log(`[SETUP-REUSE] Person ${chosenPerson} busy from ${formatDateTime(finalSetupStart)} to ${formatDateTime(finalSetupEnd)} → will be free at ${formatDateTime(finalSetupEnd)}`);
+                }
               }
 
               if (setupMin > 0) setupIntervals.push({ start: new Date(finalSetupStart), end: new Date(finalSetupEnd) });
@@ -1030,15 +1034,22 @@ function assignSetupPerson(setupStart, setupEnd, personBusy, personAssignments, 
   const shiftLength = (setupEndHour - setupStartHour) / 2; 
   const firstShiftEnd = setupStartHour + shiftLength;
   const shiftPeople = startH < firstShiftEnd ? ['A','B'] : ['C','D'];
+  
+  // FIXED: Only check for overlaps with setup duration, not run duration
   const available = shiftPeople.filter(p => countOverlaps(setupStartDate, new Date(setupEnd), personBusy[p]) === 0);
+  
   if (available.length > 0) { 
     available.sort((a,b)=>{ 
       const ca=personAssignments[a], cb=personAssignments[b]; 
       if(ca!==cb) return ca-cb; 
       return a.localeCompare(b); 
     }); 
-    return available[0]; 
+    const selectedPerson = available[0];
+    Logger.log(`[SETUP-REUSE] Person ${selectedPerson} assigned for setup at ${formatDateTime(setupStart)}`);
+    return selectedPerson; 
   }
+  
+  Logger.log(`[SETUP-REUSE] No available persons in shift ${startH < firstShiftEnd ? '1' : '2'}, using ${shiftPeople[0]}`);
   return shiftPeople[0];
 }
 
