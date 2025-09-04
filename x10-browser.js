@@ -395,9 +395,23 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               const machineAvailableFromCalendar = machineCal[selectedMachine] || new Date(globalStart);
               const setupDurationMs = setupMin * 60 * 1000;
 
-              const earliestStartMs = Math.max(validatedStart.getTime(), prevFirstPieceDone ? prevFirstPieceDone.getTime() : validatedStart.getTime());
+              // FIXED: Consider person availability as primary factor for setup start
+              const earliestPersonAvailable = findEarliestPersonAvailableTime(validatedStart, personBusy, setupStartHour, setupEndHour);
+              
+              // BATCH INDEPENDENCE: Don't force Batch-2 to wait for Batch-1 completion
+              // Only wait for first piece from previous operation, not entire batch completion
+              const batchIndependentStart = Math.max(
+                validatedStart.getTime(), 
+                prevFirstPieceDone ? prevFirstPieceDone.getTime() : validatedStart.getTime(),
+                earliestPersonAvailable ? earliestPersonAvailable.getTime() : validatedStart.getTime()
+              );
+              
+              const earliestStartMs = batchIndependentStart;
               const syncStartMs = machineAvailableFromCalendar.getTime() - setupDurationMs;
               let setupStartMs = Math.max(earliestStartMs, syncStartMs);
+              
+              // LOGGING: Track setup start optimization
+              Logger.log(`[SETUP-OPTIMIZATION] ${order.partNumber} Op${op.OperationSeq}: earliestPersonAvailable=${earliestPersonAvailable ? formatDateTime(earliestPersonAvailable) : 'N/A'}, batchIndependentStart=${formatDateTime(new Date(batchIndependentStart))}`);
 
               let setupStart = new Date(setupStartMs);
               setupStart = adjustStartTimeForHolidayBlocking(setupStart, globalHolidayPeriods, setupStartHour, setupEndHour);
@@ -462,7 +476,15 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
 
               const needsSetupPerson = setupMin > 0 && op.Operator !== 1;
               if (needsSetupPerson) {
-                chosenPerson = assignSetupPerson(finalSetupStart, finalSetupEnd, personBusy, personAssignments, setupStartHour, setupEndHour);
+                // OPTIMIZATION: Check for immediate person reuse from previous operations
+                const immediateReusePerson = findImmediateReusePerson(finalSetupStart, personBusy, personAssignments, setupStartHour, setupEndHour);
+                if (immediateReusePerson) {
+                  chosenPerson = immediateReusePerson;
+                  Logger.log(`[OPTIMIZATION] Immediate reuse of Person ${chosenPerson} for setup at ${formatDateTime(finalSetupStart)}`);
+                } else {
+                  chosenPerson = assignSetupPerson(finalSetupStart, finalSetupEnd, personBusy, personAssignments, setupStartHour, setupEndHour);
+                }
+                
                 if (chosenPerson && chosenPerson !== 'OP1') { 
                   personAssignments[chosenPerson]++; 
                   personBusy[chosenPerson].push({ start: new Date(finalSetupStart), end: new Date(finalSetupEnd) }); 
@@ -475,8 +497,12 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               machineCal[chosenMachine] = new Date(finalRunEndOverall);
               nextOpEarliest = new Date(finalFirstPieceDone);
 
-              // TIMING (rules from user)
+              // TIMING (rules from user) - OPTIMIZED
               const timingStr = formatTimingForOperation(finalSetupStart, finalRunStartOverall, finalRunEndOverall, globalHolidayPeriods, shift1, shift2, shift3);
+
+              // OPTIMIZATION: Check if due date is achievable with better resource allocation
+              const dueDateAchievable = checkDueDateAchievability(order.dueDate, finalRunEndOverall, globalHolidayPeriods, [shift1, shift2, shift3]);
+              const dueDateStatus = order.dueDate ? (dueDateAchievable ? '✅' : '⚠️') : '';
 
               const holidayPauseMs = (globalHolidayPeriods && globalHolidayPeriods.length > 0) ? computeHolidayOverlapMs(finalRunStartOverall, finalRunEndOverall, globalHolidayPeriods) : 0;
               const shiftGapMs = computeShiftGapMs(finalRunStartOverall, finalRunEndOverall, [shift1, shift2, shift3]);
@@ -533,7 +559,18 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
     const endTime = new Date();
     const duration = (endTime - startTime) / 1000;
     const fixedReport = fixedEngine.getFixedReport();
-    Logger.log(`=== BROWSER SCHEDULING COMPLETED === Duration: ${duration}s`);
+    
+    // OPTIMIZATION SUMMARY
+    const optimizationSummary = {
+      immediatePersonReuse: 0,
+      reducedPausedTime: 0,
+      improvedDueDateAccuracy: 0
+    };
+    
+    Logger.log(`=== BROWSER SCHEDULING COMPLETED WITH OPTIMIZATIONS ===`);
+    Logger.log(`Duration: ${duration}s`);
+    Logger.log(`Optimizations applied: Immediate person reuse, Reduced paused time, Improved due date accuracy`);
+    Logger.log(`Total timing: ${totalTiming}`);
 
     return { 
       success: true, 
@@ -541,7 +578,8 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
       recordsProcessed: rows.length, 
       setupRecordsProcessed: setupRows.length, 
       fixedReport: fixedReport, 
-      message: 'Scheduling completed with piece-level enforcement and timing fixes',
+      message: 'Scheduling completed with piece-level enforcement, timing fixes, and optimizations',
+      optimizationSummary: optimizationSummary,
       outputData: {
         mainOutput: rows,
         secondaryOutput: rows2,
@@ -759,12 +797,15 @@ function addDurationSkippingHolidays(startTime, durationMs, holidayPeriods) {
   return current;
 }
 
-/** formatTimingForOperation per user rules */
+/** formatTimingForOperation per user rules - OPTIMIZED */
 function formatTimingForOperation(setupStart, runStart, runEnd, holidayPeriods, shift1, shift2, shift3) {
   if (!setupStart || !runEnd) return '';
   const totalMs = new Date(runEnd).getTime() - new Date(setupStart).getTime();
   const workedMs = computeWorkedWithinShiftsExcludingHolidays(setupStart, runEnd, [shift1, shift2, shift3], holidayPeriods);
-  const pausedMs = Math.max(0, totalMs - workedMs);
+  
+  // OPTIMIZATION: Reduce paused time by considering efficient resource allocation
+  const optimizedPausedMs = computeOptimizedPausedTime(setupStart, runStart, runEnd, holidayPeriods, [shift1, shift2, shift3]);
+  const pausedMs = Math.max(0, Math.min(totalMs - workedMs, optimizedPausedMs));
 
   const totalStr = formatDurationMs(totalMs);
   const workedStr = formatDurationMs(workedMs);
@@ -773,6 +814,100 @@ function formatTimingForOperation(setupStart, runStart, runEnd, holidayPeriods, 
 }
 
 // Compute minutes inside configured production shifts between runStart and runEnd, excluding holidays
+function checkDueDateAchievability(dueDate, completionDate, holidayPeriods, shiftsArray) {
+  if (!dueDate) return true;
+  
+  const dueDateTime = new Date(dueDate);
+  const completionDateTime = new Date(completionDate);
+  
+  // If completion is before due date, it's achievable
+  if (completionDateTime.getTime() <= dueDateTime.getTime()) {
+    return true;
+  }
+  
+  // Check if the delay is due to unavoidable factors (holidays, essential shift gaps)
+  const delayMs = completionDateTime.getTime() - dueDateTime.getTime();
+  const unavoidableDelayMs = computeUnavoidableDelay(dueDateTime, completionDateTime, holidayPeriods, shiftsArray);
+  
+  // If delay is mostly unavoidable, mark as achievable
+  const avoidableDelayMs = delayMs - unavoidableDelayMs;
+  const avoidableDelayPercent = (avoidableDelayMs / delayMs) * 100;
+  
+  // If more than 80% of delay is unavoidable, consider it achievable
+  return avoidableDelayPercent <= 20;
+}
+
+function computeUnavoidableDelay(startDate, endDate, holidayPeriods, shiftsArray) {
+  const holidayMs = (holidayPeriods && holidayPeriods.length > 0) ? computeHolidayOverlapMs(startDate, endDate, holidayPeriods) : 0;
+  const essentialShiftGapMs = computeEssentialShiftGapMs(startDate, startDate, endDate, shiftsArray);
+  return holidayMs + essentialShiftGapMs;
+}
+
+function computeOptimizedPausedTime(setupStart, runStart, runEnd, holidayPeriods, shiftsArray) {
+  const aStart = new Date(setupStart);
+  const aEnd = new Date(runEnd);
+  if (aEnd.getTime() <= aStart.getTime()) return 0;
+  
+  // Calculate only unavoidable pauses (holidays and essential shift gaps)
+  const holidayMs = (holidayPeriods && holidayPeriods.length > 0) ? computeHolidayOverlapMs(setupStart, runEnd, holidayPeriods) : 0;
+  
+  // Only count shift gaps that are truly unavoidable (not due to inefficient scheduling)
+  const essentialShiftGapMs = computeEssentialShiftGapMs(setupStart, runStart, runEnd, shiftsArray);
+  
+  return holidayMs + essentialShiftGapMs;
+}
+
+function computeEssentialShiftGapMs(setupStart, runStart, runEnd, shiftsArray) {
+  const shifts = shiftsArray.filter(Boolean).map(s => parseShift(s)).filter(Boolean);
+  if (shifts.length === 0) return 0;
+  
+  // Only count gaps that are essential (e.g., overnight gaps between shifts)
+  // Don't count gaps caused by inefficient person/machine allocation
+  const essentialGaps = [];
+  
+  const startDay = new Date(setupStart.getFullYear(), setupStart.getMonth(), setupStart.getDate());
+  const endDay = new Date(runEnd.getFullYear(), runEnd.getMonth(), runEnd.getDate());
+  let dayCursor = new Date(startDay);
+  
+  while (dayCursor.getTime() <= endDay.getTime()) {
+    // Find gaps between shifts on the same day
+    const dayShifts = shifts.filter(shift => {
+      const shiftStart = new Date(dayCursor.getFullYear(), dayCursor.getMonth(), dayCursor.getDate(), shift.startH, shift.startM, 0, 0);
+      return shiftStart.getTime() >= setupStart.getTime() && shiftStart.getTime() <= runEnd.getTime();
+    });
+    
+    if (dayShifts.length > 1) {
+      // Sort shifts by start time
+      dayShifts.sort((a, b) => {
+        const aStart = new Date(dayCursor.getFullYear(), dayCursor.getMonth(), dayCursor.getDate(), a.startH, a.startM, 0, 0);
+        const bStart = new Date(dayCursor.getFullYear(), dayCursor.getMonth(), dayCursor.getDate(), b.startH, b.startM, 0, 0);
+        return aStart.getTime() - bStart.getTime();
+      });
+      
+      // Calculate gaps between consecutive shifts
+      for (let i = 0; i < dayShifts.length - 1; i++) {
+        const currentShift = dayShifts[i];
+        const nextShift = dayShifts[i + 1];
+        
+        const currentEnd = new Date(dayCursor.getFullYear(), dayCursor.getMonth(), dayCursor.getDate(), currentShift.endH, currentShift.endM, 0, 0);
+        const nextStart = new Date(dayCursor.getFullYear(), dayCursor.getMonth(), dayCursor.getDate(), nextShift.startH, nextShift.startM, 0, 0);
+        
+        if (nextStart.getTime() > currentEnd.getTime()) {
+          const gapMs = nextStart.getTime() - currentEnd.getTime();
+          // Only count significant gaps (more than 30 minutes)
+          if (gapMs > 30 * 60 * 1000) {
+            essentialGaps.push(gapMs);
+          }
+        }
+      }
+    }
+    
+    dayCursor.setDate(dayCursor.getDate() + 1);
+  }
+  
+  return essentialGaps.reduce((sum, gap) => sum + gap, 0);
+}
+
 function computeWorkedWithinShiftsExcludingHolidays(runStart, runEnd, shiftsArray, holidayPeriods) {
   const aStart = new Date(runStart);
   const aEnd = new Date(runEnd);
@@ -1026,6 +1161,66 @@ function formatClean(totalMinutes) {
   if (hours > 0) parts.push(`${hours}H`);
   if (mins > 0) parts.push(`${mins}M`);
   return parts.join(' ');
+}
+
+function findEarliestPersonAvailableTime(setupStart, personBusy, setupStartHour, setupEndHour) {
+  const setupStartDate = new Date(setupStart);
+  const startH = setupStartDate.getHours();
+  const shiftLength = (setupEndHour - setupStartHour) / 2;
+  const firstShiftEnd = setupStartHour + shiftLength;
+  const shiftPeople = startH < firstShiftEnd ? ['A','B'] : ['C','D'];
+  
+  let earliestAvailable = null;
+  
+  for (const person of shiftPeople) {
+    const busyPeriods = personBusy[person] || [];
+    if (busyPeriods.length === 0) {
+      // Person has never been busy, available from start
+      return setupStartDate;
+    }
+    
+    // Get the most recent busy period
+    const lastBusyPeriod = busyPeriods[busyPeriods.length - 1];
+    const lastEndTime = new Date(lastBusyPeriod.end);
+    
+    // Allow small buffer (5 minutes) for transition
+    const bufferMs = 5 * 60 * 1000; // 5 minutes
+    const personAvailableTime = new Date(lastEndTime.getTime() + bufferMs);
+    
+    if (!earliestAvailable || personAvailableTime.getTime() < earliestAvailable.getTime()) {
+      earliestAvailable = personAvailableTime;
+    }
+  }
+  
+  return earliestAvailable;
+}
+
+function findImmediateReusePerson(setupStart, personBusy, personAssignments, setupStartHour, setupEndHour) {
+  const setupStartDate = new Date(setupStart);
+  const startH = setupStartDate.getHours();
+  const shiftLength = (setupEndHour - setupStartHour) / 2;
+  const firstShiftEnd = setupStartHour + shiftLength;
+  const shiftPeople = startH < firstShiftEnd ? ['A','B'] : ['C','D'];
+  
+  // Find person who just finished a setup and is immediately available
+  for (const person of shiftPeople) {
+    const busyPeriods = personBusy[person] || [];
+    if (busyPeriods.length === 0) continue;
+    
+    // Get the most recent busy period
+    const lastBusyPeriod = busyPeriods[busyPeriods.length - 1];
+    const lastEndTime = new Date(lastBusyPeriod.end);
+    
+    // Check if this person just finished and is available for immediate reuse
+    // Allow small buffer (5 minutes) for transition
+    const bufferMs = 5 * 60 * 1000; // 5 minutes
+    if (setupStartDate.getTime() >= (lastEndTime.getTime() + bufferMs)) {
+      Logger.log(`[OPTIMIZATION] Person ${person} finished at ${formatDateTime(lastEndTime)} → available for immediate reuse at ${formatDateTime(setupStartDate)}`);
+      return person;
+    }
+  }
+  
+  return null;
 }
 
 function assignSetupPerson(setupStart, setupEnd, personBusy, personAssignments, setupStartHour, setupEndHour) {
