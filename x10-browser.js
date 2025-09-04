@@ -596,6 +596,36 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               let setupStart = new Date(setupStartMs);
               setupStart = adjustStartTimeForHolidayBlocking(setupStart, globalHolidayPeriods, setupStartHour, setupEndHour);
 
+              // === SETUP WINDOW ENFORCEMENT ===
+              // Ensure setup fits within shift window
+              const setupStartHour = setupStart.getHours();
+              const shiftLength = (setupEndHour - setupStartHour) / 2;
+              const firstShiftEnd = setupStartHour + shiftLength;
+              
+              // Determine which shift this setup falls into
+              let targetShiftStart, targetShiftEnd;
+              if (setupStartHour < firstShiftEnd) {
+                // Morning shift (06:00-14:00)
+                targetShiftStart = new Date(setupStart);
+                targetShiftStart.setHours(6, 0, 0, 0);
+                targetShiftEnd = new Date(setupStart);
+                targetShiftEnd.setHours(14, 0, 0, 0);
+              } else {
+                // Afternoon shift (14:00-22:00)
+                targetShiftStart = new Date(setupStart);
+                targetShiftStart.setHours(14, 0, 0, 0);
+                targetShiftEnd = new Date(setupStart);
+                targetShiftEnd.setHours(22, 0, 0, 0);
+              }
+              
+              // Ensure setup doesn't cross shift boundaries
+              const setupEndTime = new Date(setupStart.getTime() + setupDurationMs);
+              if (setupEndTime.getTime() > targetShiftEnd.getTime()) {
+                // Setup would cross shift boundary - move to next shift
+                setupStart = new Date(targetShiftEnd);
+                Logger.log(`[SETUP-WINDOW] Setup would cross shift boundary, moved to next shift at ${formatDateTime(setupStart)}`);
+              }
+
               let setupEnd = addDurationSkippingHolidays(setupStart, setupDurationMs, globalHolidayPeriods);
 
               if (setupEnd.getTime() < machineAvailableFromCalendar.getTime()) {
@@ -604,7 +634,7 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
                 setupEnd = addDurationSkippingHolidays(setupStart, setupDurationMs, globalHolidayPeriods);
               }
 
-              let machineAvailableTime = new Date(Math.max((machineCal[selectedMachine] || new Date(globalStart)).getTime(), setupEnd.getTime()));
+              let machineAvailableTime = new Date(Math.max((batchMachineCal[selectedMachine] || new Date(globalStart)).getTime(), setupEnd.getTime()));
 
               const runStarts = new Array(batchQty);
               const runEnds = new Array(batchQty);
@@ -669,20 +699,17 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
                  }
              }
              
-             // OPTIMIZATION: Check for immediate person reuse from previous operations
-             const immediateReusePerson = findImmediateReusePerson(finalSetupStart, globalPersonBusy, personAssignments, setupStartHour, setupEndHour);
-             if (immediateReusePerson) {
-                 chosenPerson = immediateReusePerson;
-                 Logger.log(`[OPTIMIZATION] Immediate reuse of Person ${chosenPerson} for setup at ${formatDateTime(finalSetupStart)}`);
-             } else {
-                 chosenPerson = assignSetupPerson(finalSetupStart, finalSetupEnd, globalPersonBusy, personAssignments, setupStartHour, setupEndHour);
-             }
+             // FIXED: Use the already assigned chosenPerson from findOptimalPerson
+             // No need to reassign - the person was already selected optimally
+             Logger.log(`[PERSON-ASSIGNMENT] Using pre-assigned Person ${chosenPerson} for setup at ${formatDateTime(finalSetupStart)}`);
              
                 
-                // FIXED: Track ALL persons including OP1
+                // FIXED: Track ALL persons including OP1 using globalPersonBusy
                 if (chosenPerson) { 
                   personAssignments[chosenPerson]++; 
-                  personBusy[chosenPerson].push({ start: new Date(finalSetupStart), end: new Date(finalSetupEnd) }); 
+                  const personBusyList = globalPersonBusy.get(chosenPerson) || [];
+                  personBusyList.push({ start: new Date(finalSetupStart), end: new Date(finalSetupEnd) });
+                  globalPersonBusy.set(chosenPerson, personBusyList);
                   Logger.log(`[SETUP-REUSE] Person ${chosenPerson} busy from ${formatDateTime(finalSetupStart)} to ${formatDateTime(finalSetupEnd)} → will be free at ${formatDateTime(finalSetupEnd)}`);
                 }
               }
@@ -1377,15 +1404,15 @@ function checkShiftCapacity(setupStart, globalPersonBusy, setupStartHour, setupE
   const shiftLength = (setupEndHour - setupStartHour) / 2;
   const firstShiftEnd = setupStartHour + shiftLength;
   
-  // Determine shift and operators
+  // Determine which shift this setup falls into
   let shiftPeople;
   if (startH < firstShiftEnd) {
-    shiftPeople = ['A','B'];
+    shiftPeople = ['A', 'B']; // Morning shift
   } else {
-    shiftPeople = ['C','D'];
+    shiftPeople = ['C', 'D']; // Afternoon shift
   }
   
-  // Count current setups in this shift
+  // Count current setups in this shift at the setup start time
   let currentSetups = 0;
   let nextAvailableTime = new Date(setupStartDate);
   
@@ -1395,10 +1422,10 @@ function checkShiftCapacity(setupStart, globalPersonBusy, setupStartHour, setupE
       const periodStart = new Date(period.start);
       const periodEnd = new Date(period.end);
       
-      // Check if this setup overlaps with the proposed setup time
-      if (periodStart.getTime() < setupStartDate.getTime() && periodEnd.getTime() > setupStartDate.getTime()) {
+      // Check if this person is busy during the setup start time
+      if (setupStartDate.getTime() >= periodStart.getTime() && setupStartDate.getTime() < periodEnd.getTime()) {
         currentSetups++;
-        // Update next available time
+        // Update next available time to when this person becomes free
         if (periodEnd.getTime() > nextAvailableTime.getTime()) {
           nextAvailableTime = periodEnd;
         }
@@ -1406,13 +1433,15 @@ function checkShiftCapacity(setupStart, globalPersonBusy, setupStartHour, setupE
     }
   }
   
-  const canAddSetup = currentSetups < CONFIG.MAX_CONCURRENT_SETUPS;
+  // Shift capacity is 2 concurrent setups (max 2 persons per shift)
+  const canAddSetup = currentSetups < 2;
   
   return {
     canAddSetup,
     currentSetups,
     nextAvailableTime,
-    shiftType: startH < firstShiftEnd ? 'morning' : 'afternoon'
+    shiftType: startH < firstShiftEnd ? 'morning' : 'afternoon',
+    shiftPeople: shiftPeople
   };
 }
 
