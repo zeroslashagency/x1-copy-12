@@ -307,18 +307,19 @@ function initializeBatchProcessing(orders, globalStart) {
   return { batchMachineCalendars, globalPersonBusy };
 }
 
-// 2. Fixed machine availability calculation
+// 2. Fixed machine availability calculation - BATCH INDEPENDENCE
 function calculateMachineAvailability(selectedMachine, validatedStart, batchMachineCal, globalMachineCal, globalStart) {
-  // For batch independence: use the LATER of batch-specific or global availability
+  // BATCH INDEPENDENCE: Only use batch-specific calendar, ignore global calendar
+  // This ensures Batch 2 doesn't wait for Batch 1's completion
   const batchMachineTime = batchMachineCal[selectedMachine] || new Date(globalStart);
-  const globalMachineTime = globalMachineCal[selectedMachine] || new Date(globalStart);
   
-  // Machine is available when BOTH batch and global constraints are satisfied
+  // Machine is available when batch-specific constraint is satisfied
   const machineAvailableFrom = new Date(Math.max(
     validatedStart.getTime(),
-    batchMachineTime.getTime(),
-    globalMachineTime.getTime()
+    batchMachineTime.getTime()
   ));
+  
+  Logger.log(`[BATCH-INDEPENDENCE] Machine ${selectedMachine}: batch time=${formatDateTime(batchMachineTime)}, available from=${formatDateTime(machineAvailableFrom)}`);
   
   return machineAvailableFrom;
 }
@@ -389,18 +390,13 @@ function getPersonNextAvailableTime(person, setupStart, globalPersonBusy) {
   return latestBusyEnd;
 }
 
-// 6. Updated machine calendar management
+// 6. Updated machine calendar management - BATCH INDEPENDENCE
 function updateMachineCalendars(chosenMachine, finalRunEndOverall, batchMachineCal, globalMachineCal, batchId, globalStart) {
-  // Update batch-specific calendar
+  // BATCH INDEPENDENCE: Only update batch-specific calendar
+  // Do NOT update global calendar to prevent serialization between batches
   batchMachineCal[chosenMachine] = new Date(finalRunEndOverall);
   
-  // Update global calendar ONLY if this batch finishes later than currently recorded
-  const currentGlobalTime = globalMachineCal[chosenMachine] || new Date(globalStart);
-  if (finalRunEndOverall.getTime() > currentGlobalTime.getTime()) {
-    globalMachineCal[chosenMachine] = new Date(finalRunEndOverall);
-  }
-  
-  Logger.log(`[MACHINE-CALENDAR] Batch ${batchId}: Updated ${chosenMachine} batch calendar to ${formatDateTime(finalRunEndOverall)}`);
+  Logger.log(`[BATCH-INDEPENDENCE] Batch ${batchId}: Updated ${chosenMachine} batch calendar to ${formatDateTime(finalRunEndOverall)} (global calendar unchanged)`);
 }
 
 // 7. Fixed operation dependency logic
