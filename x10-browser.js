@@ -674,10 +674,15 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
 
               let setupEnd = addDurationSkippingHolidays(setupStart, setupDurationMs, globalHolidayPeriods);
 
-              if (setupEnd.getTime() < machineAvailableFromCalendar.getTime()) {
+              // === BYPASS MACHINE AVAILABILITY FOR BATCH 2 ===
+              // Only apply machine availability check for Batch 1
+              if (bi === 0 && setupEnd.getTime() < machineAvailableFromCalendar.getTime()) {
                 setupStart = new Date(machineAvailableFromCalendar.getTime() - setupDurationMs);
                 setupStart = adjustStartTimeForHolidayBlocking(setupStart, globalHolidayPeriods, setupStartHour, setupEndHour);
                 setupEnd = addDurationSkippingHolidays(setupStart, setupDurationMs, globalHolidayPeriods);
+                Logger.log(`[MACHINE-AVAILABILITY] Batch ${batchId}: Adjusted for machine availability`);
+              } else if (bi > 0) {
+                Logger.log(`[MACHINE-AVAILABILITY] Batch ${batchId}: Skipping machine availability check (force parallel)`);
               }
 
               let machineAvailableTime = new Date(Math.max((batchMachineCal[selectedMachine] || new Date(globalStart)).getTime(), setupEnd.getTime()));
