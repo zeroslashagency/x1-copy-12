@@ -1,11 +1,10 @@
-# GitHub Pages Deployment Workflow
+# Simple GitHub Pages Deployment
 name: Deploy to GitHub Pages
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build-and-deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -26,29 +25,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-        with:
-          enablement: true
-      
       - name: Create deployment structure
         run: |
           mkdir -p ./dist
-          # Copy frontend files
-          cp index.html ./dist/
-          cp auth.html ./dist/
-          cp data.js ./dist/
-          cp x10.js ./dist/
-          cp app.js ./dist/
-          # Copy test files for demo
-          cp test-*.html ./dist/
-          cp debug-auth.html ./dist/
+          # Copy all HTML files
+          cp *.html ./dist/ 2>/dev/null || true
+          # Copy JavaScript files
+          cp *.js ./dist/ 2>/dev/null || true
           # Create config file with environment variables
-          echo "window.CONFIG = {
+          cat > ./dist/config.js << 'EOF'
+          window.CONFIG = {
             SUPABASE_URL: 'https://sxnaopzgaddvziplrlbe.supabase.co',
-            SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4bmFvcHpnYWRkdnppcGxybGJlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2MjUyODQsImV4cCI6MjA3MjIwMTI4NH0.o3UAaJtrNpVh_AsljSC1oZNkJPvQomedvtJlXTE3L6w',
-            GOOGLE_SHEETS_API_URL: '${{ secrets.GOOGLE_SHEETS_API_URL }}'
-          };" > ./dist/config.js
+            SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4bmFvcHpnYWRkdnppcGxybGJlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2MjUyODQsImV4cCI6MjA3MjIwMTI4NH0.o3UAaJtrNpVh_AsljSC1oZNkJPvQomedvtJlXTE3L6w'
+          };
+          EOF
+          # List files for debugging
+          echo "Files in dist directory:"
+          ls -la ./dist/
+      
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
       
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
