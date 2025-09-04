@@ -315,8 +315,8 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
 
     const machineCal = initializeMachineCalendar(db, globalStart);
     const setupIntervals = [];
-    const personBusy = { 'A': [], 'B': [], 'C': [], 'D': [] };
-    const personAssignments = { 'A': 0, 'B': 0, 'C': 0, 'D': 0 };
+    const personBusy = { 'A': [], 'B': [], 'C': [], 'D': [], 'OP1': [] };
+    const personAssignments = { 'A': 0, 'B': 0, 'C': 0, 'D': 0, 'OP1': 0 };
     const rows = [], rows2 = [], setupRows = [];
     let globalBatchCounter = 1;
     let totalEffectiveMin = 0, totalHolidayPausedMin = 0, totalGapPausedMin = 0;
@@ -350,6 +350,14 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
         const batchId = `B${String(globalBatchCounter).padStart(2, '0')}`; globalBatchCounter++;
         let nextOpEarliest = new Date(globalStart);
         let prevPieceRunEnds = null;
+
+        // PARALLEL BATCH CHECK: Detect if this batch can start in parallel
+        if (bi > 0) { // Not the first batch
+          const canStartParallel = checkParallelBatchOpportunity(order, batchId, ops[0].EligibleMachines || [], machineCal, personBusy, setupStartHour, setupEndHour);
+          if (canStartParallel) {
+            Logger.log(`[PARALLEL-BATCH] ${order.partNumber} Batch${batchId}: Starting in parallel with previous batches`);
+          }
+        }
 
         for (let opi = 0; opi < ops.length; opi++) {
           const op = ops[opi];
@@ -389,6 +397,12 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               if (!machineResult.success) { schedulingError = machineResult.error || 'No available machine after validation attempts'; break; }
               const { selectedMachine, startTime: validatedStart } = machineResult;
               opMachineResultMeta = machineResult;
+
+              // MACHINE SERIALIZATION DETECTION: Check if batch is being delayed by another batch
+              const machineCalendarTime = machineCal[selectedMachine] || new Date(globalStart);
+              if (machineCalendarTime.getTime() > validatedStart.getTime()) {
+                Logger.log(`[MACHINE-SERIALIZATION] ${order.partNumber} Batch${batchId} Op${op.OperationSeq}: Machine ${selectedMachine} calendar shows busy until ${formatDateTime(machineCalendarTime)}, but operation could start at ${formatDateTime(validatedStart)}`);
+              }
 
               // ===== Enforcement: SetupStart must not be earlier than previous operation's FIRST-PIECE completion
               const prevFirstPieceDone = (prevPieceRunEnds && prevPieceRunEnds.length > 0) ? new Date(prevPieceRunEnds[0]) : null;
@@ -485,7 +499,8 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
                   chosenPerson = assignSetupPerson(finalSetupStart, finalSetupEnd, personBusy, personAssignments, setupStartHour, setupEndHour);
                 }
                 
-                if (chosenPerson && chosenPerson !== 'OP1') { 
+                // FIXED: Track ALL persons including OP1
+                if (chosenPerson) { 
                   personAssignments[chosenPerson]++; 
                   personBusy[chosenPerson].push({ start: new Date(finalSetupStart), end: new Date(finalSetupEnd) }); 
                   Logger.log(`[SETUP-REUSE] Person ${chosenPerson} busy from ${formatDateTime(finalSetupStart)} to ${formatDateTime(finalSetupEnd)} → will be free at ${formatDateTime(finalSetupEnd)}`);
@@ -494,8 +509,24 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
 
               if (setupMin > 0) setupIntervals.push({ start: new Date(finalSetupStart), end: new Date(finalSetupEnd) });
 
+              // BATCH INDEPENDENCE: Only update machine calendar for the specific machine used, not all machines
+              // This allows other machines to remain available for parallel batch processing
               machineCal[chosenMachine] = new Date(finalRunEndOverall);
-              nextOpEarliest = new Date(finalFirstPieceDone);
+              
+              // LOGGING: Track machine calendar updates
+              Logger.log(`[MACHINE-CALENDAR] ${order.partNumber} Batch${batchId} Op${op.OperationSeq}: Updated ${chosenMachine} calendar to ${formatDateTime(finalRunEndOverall)}`);
+              
+              // FIXED: nextOpEarliest should only be updated for the NEXT operation within the SAME batch
+              // Not for the next batch, which should be independent
+              if (opi < ops.length - 1) {
+                // Only update for next operation in same batch
+                nextOpEarliest = new Date(finalFirstPieceDone);
+                Logger.log(`[BATCH-INDEPENDENCE] ${order.partNumber} Batch${batchId}: Updated nextOpEarliest to ${formatDateTime(finalFirstPieceDone)} for next operation in same batch`);
+              } else {
+                // Reset for next batch to ensure independence
+                nextOpEarliest = new Date(globalStart);
+                Logger.log(`[BATCH-INDEPENDENCE] ${order.partNumber} Batch${batchId}: Reset nextOpEarliest to ${formatDateTime(globalStart)} for next batch independence`);
+              }
 
               // TIMING (rules from user) - OPTIMIZED
               const timingStr = formatTimingForOperation(finalSetupStart, finalRunStartOverall, finalRunEndOverall, globalHolidayPeriods, shift1, shift2, shift3);
@@ -1163,6 +1194,42 @@ function formatClean(totalMinutes) {
   return parts.join(' ');
 }
 
+function checkParallelBatchOpportunity(order, batchId, eligibleMachines, machineCal, personBusy, setupStartHour, setupEndHour) {
+  // Check if this batch can start in parallel with previous batches
+  const availableMachines = eligibleMachines.filter(machine => {
+    const machineTime = machineCal[machine] || new Date(globalStart);
+    return machineTime.getTime() <= new Date(globalStart).getTime();
+  });
+  
+  const availablePersons = findAvailablePersons(new Date(globalStart), personBusy, setupStartHour, setupEndHour);
+  
+  if (availableMachines.length > 0 && availablePersons.length > 0) {
+    Logger.log(`[PARALLEL-BATCH] ${order.partNumber} Batch${batchId}: ${availableMachines.length} machines and ${availablePersons.length} persons available for parallel processing`);
+    return true;
+  }
+  
+  return false;
+}
+
+function findAvailablePersons(startTime, personBusy, setupStartHour, setupEndHour) {
+  const startH = startTime.getHours();
+  const shiftLength = (setupEndHour - setupStartHour) / 2;
+  const firstShiftEnd = setupStartHour + shiftLength;
+  const shiftPeople = startH < firstShiftEnd ? ['A','B'] : ['C','D'];
+  
+  // FIXED: Include OP1 in available persons check
+  const allPersons = [...shiftPeople, 'OP1'];
+  
+  return allPersons.filter(person => {
+    const busyPeriods = personBusy[person] || [];
+    if (busyPeriods.length === 0) return true;
+    
+    const lastBusyPeriod = busyPeriods[busyPeriods.length - 1];
+    const lastEndTime = new Date(lastBusyPeriod.end);
+    return lastEndTime.getTime() <= startTime.getTime();
+  });
+}
+
 function findEarliestPersonAvailableTime(setupStart, personBusy, setupStartHour, setupEndHour) {
   const setupStartDate = new Date(setupStart);
   const startH = setupStartDate.getHours();
@@ -1170,9 +1237,12 @@ function findEarliestPersonAvailableTime(setupStart, personBusy, setupStartHour,
   const firstShiftEnd = setupStartHour + shiftLength;
   const shiftPeople = startH < firstShiftEnd ? ['A','B'] : ['C','D'];
   
+  // FIXED: Include OP1 in earliest person available check
+  const allPersons = [...shiftPeople, 'OP1'];
+  
   let earliestAvailable = null;
   
-  for (const person of shiftPeople) {
+  for (const person of allPersons) {
     const busyPeriods = personBusy[person] || [];
     if (busyPeriods.length === 0) {
       // Person has never been busy, available from start
