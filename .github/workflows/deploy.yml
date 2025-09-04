@@ -28,6 +28,8 @@ jobs:
       
       - name: Setup Pages
         uses: actions/configure-pages@v4
+        with:
+          enablement: true
       
       - name: Create deployment structure
         run: |
@@ -43,8 +45,8 @@ jobs:
           cp debug-auth.html ./dist/
           # Create config file with environment variables
           echo "window.CONFIG = {
-            SUPABASE_URL: '${{ secrets.SUPABASE_URL }}',
-            SUPABASE_ANON_KEY: '${{ secrets.SUPABASE_ANON_KEY }}',
+            SUPABASE_URL: 'https://sxnaopzgaddvziplrlbe.supabase.co',
+            SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4bmFvcHpnYWRkdnppcGxybGJlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2MjUyODQsImV4cCI6MjA3MjIwMTI4NH0.o3UAaJtrNpVh_AsljSC1oZNkJPvQomedvtJlXTE3L6w',
             GOOGLE_SHEETS_API_URL: '${{ secrets.GOOGLE_SHEETS_API_URL }}'
           };" > ./dist/config.js
       

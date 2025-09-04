@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser Scheduling Engine Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            margin: 20px 0;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .results {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        pre {
+            background: white;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow-x: auto;
+            max-height: 400px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏭 Browser Scheduling Engine Test</h1>
+    
+    <div class="container">
+        <h2>Sample Data</h2>
+        <p>This example uses sample operation master data and input orders to demonstrate the browser-compatible scheduling engine.</p>
+        
+        <button onclick="runSchedulingExample()">🚀 Run Scheduling</button>
+        <button onclick="clearResults()">🧹 Clear Results</button>
+    </div>
+
+    <div id="results"></div>
+
+    <!-- Include the browser-compatible scheduling engine -->
+    <script src="x10-browser.js"></script>
+    
+    <script>
+        // Sample operation master data (equivalent to data.js)
+        const sampleOperationMaster = [
+            { PartNumber: "PN1001", OperationSeq: 1, OperationName: "Facing", SetupTime_Min: 70, Operator: "-", CycleTime_Min: 18, Minimum_BatchSize: 175, EligibleMachines: ["VMC 1","VMC 2","VMC 3","VMC 4"] },
+            { PartNumber: "PN1001", OperationSeq: 2, OperationName: "Drilling", SetupTime_Min: 50, Operator: "-", CycleTime_Min: 12, Minimum_BatchSize: 175, EligibleMachines: ["VMC 1","VMC 2","VMC 7","VMC 4"] },
+            { PartNumber: "PN2001", OperationSeq: 1, OperationName: "Milling", SetupTime_Min: 80, Operator: "-", CycleTime_Min: 16, Minimum_BatchSize: 50, EligibleMachines: ["VMC 1","VMC 2","VMC 3","VMC 4","VMC 5","VMC 6","VMC 7"] },
+            { PartNumber: "PN2001", OperationSeq: 2, OperationName: "Finishing", SetupTime_Min: 60, Operator: "-", CycleTime_Min: 8, Minimum_BatchSize: 50, EligibleMachines: ["VMC 1","VMC 2","VMC 7","VMC 4"] },
+            { PartNumber: "PN3001", OperationSeq: 1, OperationName: "Turning", SetupTime_Min: 90, Operator: "-", CycleTime_Min: 25, Minimum_BatchSize: 25, EligibleMachines: ["VMC 2","VMC 7","VMC 4","VMC 5","VMC 6"] }
+        ];
+
+        // Sample input orders
+        const sampleInputData = [
+            {
+                partNumber: "PN1001",
+                orderQty: 200,
+                priority: "high",
+                dueDate: "2025-02-15",
+                startDate: "2025-01-28"
+            },
+            {
+                partNumber: "PN2001", 
+                orderQty: 150,
+                priority: "normal",
+                dueDate: "2025-02-20",
+                startDate: "2025-01-28"
+            },
+            {
+                partNumber: "PN3001",
+                orderQty: 75,
+                priority: "urgent",
+                dueDate: "2025-02-10",
+                startDate: "2025-01-28"
+            }
+        ];
+
+        async function runSchedulingExample() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="results"><h3>🔄 Running Scheduling Engine...</h3><p>Processing orders and operations...</p></div>';
+
+            try {
+                console.log('Starting browser scheduling...');
+                
+                // Run the browser-compatible scheduling engine
+                const result = runSchedulingInBrowser(sampleInputData, sampleOperationMaster, {
+                    enableLogging: true
+                });
+
+                console.log('Scheduling completed:', result);
+
+                if (result.success) {
+                    displayResults(result);
+                } else {
+                    displayError('Scheduling failed: ' + (result.error || 'Unknown error'));
+                }
+
+            } catch (error) {
+                console.error('Scheduling error:', error);
+                displayError('Error running scheduling: ' + error.message);
+            }
+        }
+
+        function displayResults(result) {
+            const resultsDiv = document.getElementById('results');
+            
+            const html = `
+                <div class="results">
+                    <h3>✅ Scheduling Completed Successfully!</h3>
+                    
+                    <h4>📊 Summary</h4>
+                    <ul>
+                        <li><strong>Duration:</strong> ${result.duration.toFixed(2)} seconds</li>
+                        <li><strong>Records Processed:</strong> ${result.recordsProcessed}</li>
+                        <li><strong>Setup Records:</strong> ${result.setupRecordsProcessed}</li>
+                        <li><strong>Total Assignments:</strong> ${result.fixedReport.totalAssignments}</li>
+                        <li><strong>Total Reschedules:</strong> ${result.fixedReport.totalReschedules}</li>
+                        <li><strong>Validation Failures:</strong> ${result.fixedReport.totalValidationFailures}</li>
+                    </ul>
+
+                    <h4>📋 Main Schedule Output</h4>
+                    ${generateScheduleTable(result.outputData.mainOutput)}
+
+                    <h4>🔧 Setup Operations</h4>
+                    ${result.outputData.setupOutput.length > 0 ? generateSetupTable(result.outputData.setupOutput) : '<p>No setup operations required.</p>'}
+
+                    <h4>📈 Engine Report</h4>
+                    <details>
+                        <summary>Click to view detailed report</summary>
+                        <pre>${JSON.stringify(result.fixedReport, null, 2)}</pre>
+                    </details>
+
+                    <h4>💾 Raw Output Data</h4>
+                    <details>
+                        <summary>Click to view raw data (for debugging)</summary>
+                        <pre>${JSON.stringify(result.outputData, null, 2)}</pre>
+                    </details>
+                </div>
+            `;
+            
+            resultsDiv.innerHTML = html;
+        }
+
+        function generateScheduleTable(scheduleData) {
+            if (!scheduleData || scheduleData.length === 0) {
+                return '<p>No schedule data available.</p>';
+            }
+
+            const headers = ["Part Number", "Order Qty", "Priority", "Batch ID", "Batch Qty", "Op Seq", "Operation", "Machine", "Person", "Setup Start", "Setup End", "Run Start", "Run End", "Timing"];
+            
+            let html = '<table><thead><tr>';
+            headers.forEach(header => {
+                html += `<th>${header}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            scheduleData.forEach(row => {
+                html += '<tr>';
+                for (let i = 0; i < Math.min(row.length, headers.length); i++) {
+                    let cellValue = row[i];
+                    if (cellValue instanceof Date) {
+                        cellValue = cellValue.toLocaleString();
+                    }
+                    html += `<td>${cellValue || ''}</td>`;
+                }
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            return html;
+        }
+
+        function generateSetupTable(setupData) {
+            if (!setupData || setupData.length === 0) {
+                return '<p>No setup data available.</p>';
+            }
+
+            const headers = ["Part Number", "Order Qty", "Batch Qty", "Op Seq", "Machine", "Person", "Setup Start", "Setup End", "Timing"];
+            
+            let html = '<table><thead><tr>';
+            headers.forEach(header => {
+                html += `<th>${header}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            setupData.forEach(row => {
+                html += '<tr>';
+                for (let i = 0; i < Math.min(row.length, headers.length); i++) {
+                    let cellValue = row[i];
+                    if (cellValue instanceof Date) {
+                        cellValue = cellValue.toLocaleString();
+                    }
+                    html += `<td>${cellValue || ''}</td>`;
+                }
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            return html;
+        }
+
+        function displayError(errorMessage) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `
+                <div class="error">
+                    <h3>❌ Error</h3>
+                    <p>${errorMessage}</p>
+                    <p>Check the browser console for more details.</p>
+                </div>
+            `;
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        // Auto-run example on page load for demonstration
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Browser Scheduling Engine loaded successfully!');
+            console.log('Sample data ready. Click "Run Scheduling" to test.');
+        });
+    </script>
+</body>
+</html>
