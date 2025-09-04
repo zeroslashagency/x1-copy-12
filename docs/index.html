@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scheduling App x1</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .links {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin: 30px 0;
+        }
+        .btn {
+            padding: 12px 24px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background 0.3s;
+        }
+        .btn:hover {
+            background: #0056b3;
+        }
+        .status {
+            text-align: center;
+            margin: 20px 0;
+            padding: 15px;
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 5px;
+            color: #155724;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗓️ Scheduling App x1</h1>
+        
+        <div class="status">
+            ✅ GitHub Pages is now working!
+        </div>
+        
+        <p>Welcome to the Scheduling App x1. This application helps you manage appointments and schedules efficiently.</p>
+        
+        <div class="links">
+            <a href="../index.html" class="btn">Main App</a>
+            <a href="../auth.html" class="btn">Authentication</a>
+            <a href="../test-auth.html" class="btn">Test Auth</a>
+        </div>
+        
+        <h3>🚀 Deployment Links:</h3>
+        <ul>
+            <li><strong>Vercel (Production):</strong> <a href="https://x1-copy-12.vercel.app" target="_blank">x1-copy-12.vercel.app</a></li>
+            <li><strong>GitHub Pages:</strong> <a href="https://zeroslashagency.github.io/x1-copy-12/" target="_blank">zeroslashagency.github.io/x1-copy-12</a></li>
+        </ul>
+        
+        <h3>🔧 Configuration:</h3>
+        <ul>
+            <li>✅ Supabase URL: Configured</li>
+            <li>✅ Authentication: Ready</li>
+            <li>✅ Database: Connected</li>
+        </ul>
+    </div>
+
+    <script>
+        // Supabase Configuration
+        window.CONFIG = {
+            SUPABASE_URL: 'https://sxnaopzgaddvziplrlbe.supabase.co',
+            SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4bmFvcHpnYWRkdnppcGxybGJlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY2MjUyODQsImV4cCI6MjA3MjIwMTI4NH0.o3UAaJtrNpVh_AsljSC1oZNkJPvQomedvtJlXTE3L6w'
+        };
+        
+        console.log('GitHub Pages deployment successful!');
+        console.log('Supabase configured:', window.CONFIG.SUPABASE_URL);
+    </script>
+</body>
+</html>
