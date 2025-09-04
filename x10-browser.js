@@ -579,24 +579,8 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               // 3. Optimized person assignment with shift awareness
               const chosenPerson = findOptimalPerson(new Date(machineAvailableFrom), new Date(machineAvailableFrom.getTime() + setupDurationMs), globalPersonBusy, setupStartHour, setupEndHour);
               
-              // === FORCE OPERATOR DISTRIBUTION FOR PARALLEL BATCHES ===
-              // If this is Batch 2 and it's trying to start at 06:00, force Operator B
+              // Use the chosen person directly (Google Apps Script approach)
               let finalChosenPerson = chosenPerson;
-              if (bi > 0) {
-                const forceStartTime = new Date(globalStart);
-                forceStartTime.setHours(6, 0, 0, 0);
-                if (finalBatchStart === forceStartTime.getTime()) {
-                  // Force Batch 2 to use Operator B if starting at 06:00
-                  const shiftPersons = ['A', 'B'];
-                  const availablePerson = shiftPersons.find(person => 
-                    person !== 'A' && isPersonAvailable(person, new Date(finalBatchStart), new Date(finalBatchStart + setupDurationMs), globalPersonBusy)
-                  );
-                  if (availablePerson) {
-                    finalChosenPerson = availablePerson;
-                    Logger.log(`[FORCE-OPERATOR] Batch ${batchId}: Forcing Operator ${finalChosenPerson} for parallel start`);
-                  }
-                }
-              }
               
               // FIXED: Consider person availability as primary factor for setup start
               const earliestPersonAvailable = findEarliestPersonAvailableTime(machineAvailableFrom, globalPersonBusy, setupStartHour, setupEndHour);
@@ -609,17 +593,16 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
                 earliestPersonAvailable ? earliestPersonAvailable.getTime() : machineAvailableFrom.getTime()
               );
               
-              // === FORCE PARALLEL START FOR BATCH 2 ===
-              // If this is Batch 2 (or later), force start at 06:00 regardless of dependencies
-              let finalBatchStart = batchIndependentStart;
-              if (bi > 0) { // Not the first batch
-                const forceStartTime = new Date(globalStart);
-                forceStartTime.setHours(6, 0, 0, 0); // Force 06:00 start
-                finalBatchStart = Math.max(batchIndependentStart, forceStartTime.getTime());
-                Logger.log(`[FORCE-PARALLEL] Batch ${batchId}: Forcing start to 06:00 (${formatDateTime(new Date(finalBatchStart))})`);
-              }
+              // === GOOGLE APPS SCRIPT BATCH INDEPENDENCE ===
+              // Each batch starts independently at 06:00 regardless of other batches
+              const earliestStartMs = Math.max(
+                validatedStart.getTime(), 
+                prevFirstPieceDone ? prevFirstPieceDone.getTime() : validatedStart.getTime()
+              );
               
-              const earliestStartMs = finalBatchStart;
+              // REMOVE: Force parallel start mechanism (Google Apps Script doesn't need it)
+              // The natural logic should work like Google Apps Script
+              const finalBatchStart = earliestStartMs;
               const syncStartMs = machineAvailableFromCalendar.getTime() - setupDurationMs;
               let setupStartMs = Math.max(earliestStartMs, syncStartMs);
               
@@ -1677,11 +1660,13 @@ function assignSetupPerson(setupStart, setupEnd, globalPersonBusy, personAssignm
     const busyPeriods = globalPersonBusy.get(p) || [];
     if (busyPeriods.length === 0) return true; // Never busy, always available
     
-    // Check if person is free during setup window
+    // Check if person is free during setup window (GOOGLE APPS SCRIPT LOGIC)
     return !busyPeriods.some(period => {
       const periodStart = new Date(period.start);
       const periodEnd = new Date(period.end);
-      return !(setupStartDate.getTime() >= periodEnd.getTime() || new Date(setupEnd).getTime() <= periodStart.getTime());
+      // CORRECT OVERLAP DETECTION: setup overlaps with busy period
+      return (setupStartDate.getTime() < periodEnd.getTime() && 
+              new Date(setupEnd).getTime() > periodStart.getTime());
     });
   });
   
