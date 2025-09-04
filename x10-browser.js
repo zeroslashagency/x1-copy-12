@@ -579,8 +579,24 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               // 3. Optimized person assignment with shift awareness
               const chosenPerson = findOptimalPerson(new Date(machineAvailableFrom), new Date(machineAvailableFrom.getTime() + setupDurationMs), globalPersonBusy, setupStartHour, setupEndHour);
               
-              // Use the chosen person directly (Google Apps Script approach)
+              // === FORCE OPERATOR DISTRIBUTION FOR BATCH 2 ===
+              // If this is Batch 2 and it's starting at 06:00, ensure it uses different operator
               let finalChosenPerson = chosenPerson;
+              if (bi > 0) {
+                const forceStartTime = new Date(globalStart);
+                forceStartTime.setHours(6, 0, 0, 0);
+                if (finalBatchStart === forceStartTime.getTime()) {
+                  // Force Batch 2 to use different operator than Batch 1
+                  const shiftPersons = ['A', 'B'];
+                  const availablePerson = shiftPersons.find(person => 
+                    person !== finalChosenPerson && isPersonAvailable(person, new Date(finalBatchStart), new Date(finalBatchStart + setupDurationMs), globalPersonBusy)
+                  );
+                  if (availablePerson) {
+                    finalChosenPerson = availablePerson;
+                    Logger.log(`[FORCE-OPERATOR] Batch ${batchId}: Forcing Operator ${finalChosenPerson} for parallel start`);
+                  }
+                }
+              }
               
               // FIXED: Consider person availability as primary factor for setup start
               const earliestPersonAvailable = findEarliestPersonAvailableTime(machineAvailableFrom, globalPersonBusy, setupStartHour, setupEndHour);
@@ -600,11 +616,17 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
                 prevFirstPieceDone ? prevFirstPieceDone.getTime() : validatedStart.getTime()
               );
               
-              // REMOVE: Force parallel start mechanism (Google Apps Script doesn't need it)
-              // The natural logic should work like Google Apps Script
-              const finalBatchStart = earliestStartMs;
+              // === FORCE BATCH 2 TO START AT 06:00 ===
+              // If this is Batch 2 (or later), force start at 06:00 like Google Apps Script
+              let finalBatchStart = earliestStartMs;
+              if (bi > 0) { // Not the first batch
+                const forceStartTime = new Date(globalStart);
+                forceStartTime.setHours(6, 0, 0, 0); // Force 06:00 start
+                finalBatchStart = Math.max(earliestStartMs, forceStartTime.getTime());
+                Logger.log(`[FORCE-PARALLEL] Batch ${batchId}: Forcing start to 06:00 (${formatDateTime(new Date(finalBatchStart))})`);
+              }
               const syncStartMs = machineAvailableFromCalendar.getTime() - setupDurationMs;
-              let setupStartMs = Math.max(earliestStartMs, syncStartMs);
+              let setupStartMs = Math.max(finalBatchStart, syncStartMs);
               
               // LOGGING: Track setup start optimization
               Logger.log(`[SETUP-OPTIMIZATION] ${order.partNumber} Op${op.OperationSeq}: earliestPersonAvailable=${earliestPersonAvailable ? formatDateTime(earliestPersonAvailable) : 'N/A'}, batchIndependentStart=${formatDateTime(new Date(batchIndependentStart))}`);
