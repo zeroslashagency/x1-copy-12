@@ -221,6 +221,9 @@ class FixedUnifiedSchedulingEngine {
     }
     if (availableMachines.length === 0) return { success: false, error: `No available machines for operation`, availableMachines: [], rejectedMachines: rejectedMachines, selectedMachine: null };
 
+    // Prefer higher-numbered machines to distribute load and enable parallelism for subsequent batches
+    availableMachines.sort((a, b) => Number(b.split(' ')[1]) - Number(a.split(' ')[1]));
+
     let selectedMachine = availableMachines[0];
     let bestTime = machineCal[selectedMachine] || operationStart;
     availableMachines.forEach(machine => {
@@ -348,15 +351,19 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
       for (let bi = 0; bi < batches.length; bi++) {
         const batchQty = batches[bi];
         const batchId = `B${String(globalBatchCounter).padStart(2, '0')}`; globalBatchCounter++;
+        
+        // BATCH INDEPENDENCE: Each batch starts fresh, independent of previous batches
         let nextOpEarliest = new Date(globalStart);
         let prevPieceRunEnds = null;
 
-        // PARALLEL BATCH CHECK: Detect if this batch can start in parallel
-        if (bi > 0) { // Not the first batch
-          const canStartParallel = checkParallelBatchOpportunity(order, batchId, ops[0].EligibleMachines || [], machineCal, personBusy, setupStartHour, setupEndHour);
-          if (canStartParallel) {
-            Logger.log(`[PARALLEL-BATCH] ${order.partNumber} Batch${batchId}: Starting in parallel with previous batches`);
-          }
+        // PARALLEL BATCH EVALUATION: Check if this batch can start immediately
+        const availableResources = evaluateBatchResources(order, batchId, ops, machineCal, personBusy, setupStartHour, setupEndHour, globalStart);
+        if (availableResources.canStartImmediately) {
+          Logger.log(`[BATCH-INDEPENDENCE] ${order.partNumber} Batch${batchId}: Starting immediately with ${availableResources.availableMachines.length} machines and ${availableResources.availablePersons.length} persons`);
+          nextOpEarliest = new Date(globalStart);
+        } else {
+          Logger.log(`[BATCH-INDEPENDENCE] ${order.partNumber} Batch${batchId}: Waiting for resources - earliest start: ${formatDateTime(availableResources.earliestStart)}`);
+          nextOpEarliest = availableResources.earliestStart;
         }
 
         for (let opi = 0; opi < ops.length; opi++) {
@@ -398,11 +405,14 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               const { selectedMachine, startTime: validatedStart } = machineResult;
               opMachineResultMeta = machineResult;
 
-              // MACHINE SERIALIZATION DETECTION: Check if batch is being delayed by another batch
-              const machineCalendarTime = machineCal[selectedMachine] || new Date(globalStart);
-              if (machineCalendarTime.getTime() > validatedStart.getTime()) {
-                Logger.log(`[MACHINE-SERIALIZATION] ${order.partNumber} Batch${batchId} Op${op.OperationSeq}: Machine ${selectedMachine} calendar shows busy until ${formatDateTime(machineCalendarTime)}, but operation could start at ${formatDateTime(validatedStart)}`);
-              }
+              // BATCH INDEPENDENCE: Force machine selection to be independent of other batches
+              // Only consider machine availability, not other batch dependencies
+              const independentMachineStart = new Date(Math.max(
+                validatedStart.getTime(),
+                machineCal[selectedMachine] ? machineCal[selectedMachine].getTime() : new Date(globalStart).getTime()
+              ));
+              
+              Logger.log(`[BATCH-INDEPENDENCE] ${order.partNumber} Batch${batchId} Op${op.OperationSeq}: Machine ${selectedMachine} independent start at ${formatDateTime(independentMachineStart)}`);
 
               // ===== Enforcement: SetupStart must not be earlier than previous operation's FIRST-PIECE completion
               const prevFirstPieceDone = (prevPieceRunEnds && prevPieceRunEnds.length > 0) ? new Date(prevPieceRunEnds[0]) : null;
@@ -410,14 +420,14 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               const setupDurationMs = setupMin * 60 * 1000;
 
               // FIXED: Consider person availability as primary factor for setup start
-              const earliestPersonAvailable = findEarliestPersonAvailableTime(validatedStart, personBusy, setupStartHour, setupEndHour);
+              const earliestPersonAvailable = findEarliestPersonAvailableTime(independentMachineStart, personBusy, setupStartHour, setupEndHour);
               
               // BATCH INDEPENDENCE: Don't force Batch-2 to wait for Batch-1 completion
               // Only wait for first piece from previous operation, not entire batch completion
               const batchIndependentStart = Math.max(
-                validatedStart.getTime(), 
-                prevFirstPieceDone ? prevFirstPieceDone.getTime() : validatedStart.getTime(),
-                earliestPersonAvailable ? earliestPersonAvailable.getTime() : validatedStart.getTime()
+                independentMachineStart.getTime(), 
+                prevFirstPieceDone ? prevFirstPieceDone.getTime() : independentMachineStart.getTime(),
+                earliestPersonAvailable ? earliestPersonAvailable.getTime() : independentMachineStart.getTime()
               );
               
               const earliestStartMs = batchIndependentStart;
@@ -490,14 +500,28 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
 
               const needsSetupPerson = setupMin > 0 && op.Operator !== 1;
               if (needsSetupPerson) {
-                // OPTIMIZATION: Check for immediate person reuse from previous operations
-                const immediateReusePerson = findImmediateReusePerson(finalSetupStart, personBusy, personAssignments, setupStartHour, setupEndHour);
-                if (immediateReusePerson) {
-                  chosenPerson = immediateReusePerson;
-                  Logger.log(`[OPTIMIZATION] Immediate reuse of Person ${chosenPerson} for setup at ${formatDateTime(finalSetupStart)}`);
-                } else {
-                  chosenPerson = assignSetupPerson(finalSetupStart, finalSetupEnd, personBusy, personAssignments, setupStartHour, setupEndHour);
-                }
+                // CONCURRENT SETUP LIMITING: Check if shift capacity allows another setup
+                const shiftCapacity = checkShiftCapacity(finalSetupStart, personBusy, setupStartHour, setupEndHour);
+                if (!shiftCapacity.canAddSetup) {
+                  Logger.log(`[SHIFT-CAPACITY] ${order.partNumber} Batch${batchId} Op${op.OperationSeq}: Shift at capacity (${shiftCapacity.currentSetups}/2), waiting until ${formatDateTime(shiftCapacity.nextAvailableTime)}`);
+                 // Reschedule to next available time
+                 const rescheduleResult = fixedEngine.findRescheduleWindow(finalSetupStart, finalSetupEnd, eligibleMachines, { partNumber: order.partNumber, operationSeq: op.OperationSeq, batchId: batchId });
+                 if (rescheduleResult.success) {
+                     finalSetupStart = rescheduleResult.newStart;
+                     finalSetupEnd = rescheduleResult.newEnd;
+                     Logger.log(`[SHIFT-CAPACITY] Rescheduled to ${formatDateTime(finalSetupStart)}`);
+                 }
+             }
+             
+             // OPTIMIZATION: Check for immediate person reuse from previous operations
+             const immediateReusePerson = findImmediateReusePerson(finalSetupStart, personBusy, personAssignments, setupStartHour, setupEndHour);
+             if (immediateReusePerson) {
+                 chosenPerson = immediateReusePerson;
+                 Logger.log(`[OPTIMIZATION] Immediate reuse of Person ${chosenPerson} for setup at ${formatDateTime(finalSetupStart)}`);
+             } else {
+                 chosenPerson = assignSetupPerson(finalSetupStart, finalSetupEnd, personBusy, personAssignments, setupStartHour, setupEndHour);
+             }
+             
                 
                 // FIXED: Track ALL persons including OP1
                 if (chosenPerson) { 
@@ -1194,6 +1218,130 @@ function formatClean(totalMinutes) {
   return parts.join(' ');
 }
 
+function checkShiftCapacity(setupStart, personBusy, setupStartHour, setupEndHour) {
+  const setupStartDate = new Date(setupStart);
+  const startH = setupStartDate.getHours();
+  const shiftLength = (setupEndHour - setupStartHour) / 2;
+  const firstShiftEnd = setupStartHour + shiftLength;
+  
+  // Determine shift and operators
+  let shiftPeople;
+  if (startH < firstShiftEnd) {
+    shiftPeople = ['A','B'];
+  } else {
+    shiftPeople = ['C','D'];
+  }
+  
+  // Count current setups in this shift
+  let currentSetups = 0;
+  let nextAvailableTime = new Date(setupStartDate);
+  
+  for (const person of shiftPeople) {
+    const busyPeriods = personBusy[person] || [];
+    for (const period of busyPeriods) {
+      const periodStart = new Date(period.start);
+      const periodEnd = new Date(period.end);
+      
+      // Check if this setup overlaps with the proposed setup time
+      if (periodStart.getTime() < setupStartDate.getTime() && periodEnd.getTime() > setupStartDate.getTime()) {
+        currentSetups++;
+        // Update next available time
+        if (periodEnd.getTime() > nextAvailableTime.getTime()) {
+          nextAvailableTime = periodEnd;
+        }
+      }
+    }
+  }
+  
+  const canAddSetup = currentSetups < CONFIG.MAX_CONCURRENT_SETUPS;
+  
+  return {
+    canAddSetup,
+    currentSetups,
+    nextAvailableTime,
+    shiftType: startH < firstShiftEnd ? 'morning' : 'afternoon'
+  };
+}
+
+function evaluateBatchResources(order, batchId, ops, machineCal, personBusy, setupStartHour, setupEndHour, globalStart) {
+  // Evaluate all operations in the batch to find earliest possible start
+  let earliestStart = new Date(globalStart);
+  let availableMachines = [];
+  let availablePersons = [];
+  
+  for (const op of ops) {
+    const eligibleMachines = op.EligibleMachines || [];
+    const setupMin = Number(op.SetupTime_Min || 0);
+    
+    // Find available machines for this operation
+    const opAvailableMachines = eligibleMachines.filter(machine => {
+      const machineTime = machineCal[machine] || new Date(globalStart);
+      return machineTime.getTime() <= earliestStart.getTime();
+    });
+    
+    // Find available persons for this operation
+    const startH = earliestStart.getHours();
+    const shiftLength = (setupEndHour - setupStartHour) / 2;
+    const firstShiftEnd = setupStartHour + shiftLength;
+    const shiftPeople = startH < firstShiftEnd ? ['A','B'] : ['C','D'];
+    const allPersons = [...shiftPeople, 'OP1'];
+    
+    const opAvailablePersons = allPersons.filter(person => {
+      const busyPeriods = personBusy[person] || [];
+      if (busyPeriods.length === 0) return true;
+      
+      const lastBusyPeriod = busyPeriods[busyPeriods.length - 1];
+      const lastEndTime = new Date(lastBusyPeriod.end);
+      return lastEndTime.getTime() <= earliestStart.getTime();
+    });
+    
+    // If no machines or persons available, find earliest time when they become available
+    if (opAvailableMachines.length === 0 || opAvailablePersons.length === 0) {
+      let earliestMachineTime = new Date(globalStart);
+      let earliestPersonTime = new Date(globalStart);
+      
+      // Find earliest machine availability
+      for (const machine of eligibleMachines) {
+        const machineTime = machineCal[machine] || new Date(globalStart);
+        if (machineTime.getTime() > earliestMachineTime.getTime()) {
+          earliestMachineTime = machineTime;
+        }
+      }
+      
+      // Find earliest person availability
+      for (const person of allPersons) {
+        const busyPeriods = personBusy[person] || [];
+        if (busyPeriods.length > 0) {
+          const lastBusyPeriod = busyPeriods[busyPeriods.length - 1];
+          const lastEndTime = new Date(lastBusyPeriod.end);
+          if (lastEndTime.getTime() > earliestPersonTime.getTime()) {
+            earliestPersonTime = lastEndTime;
+          }
+        }
+      }
+      
+      // Take the later of machine and person availability
+      const resourceAvailableTime = new Date(Math.max(earliestMachineTime.getTime(), earliestPersonTime.getTime()));
+      if (resourceAvailableTime.getTime() > earliestStart.getTime()) {
+        earliestStart = resourceAvailableTime;
+      }
+    }
+    
+    // Update available resources
+    availableMachines = [...new Set([...availableMachines, ...opAvailableMachines])];
+    availablePersons = [...new Set([...availablePersons, ...opAvailablePersons])];
+  }
+  
+  const canStartImmediately = earliestStart.getTime() <= new Date(globalStart).getTime();
+  
+  return {
+    canStartImmediately,
+    earliestStart,
+    availableMachines,
+    availablePersons
+  };
+}
+
 function checkParallelBatchOpportunity(order, batchId, eligibleMachines, machineCal, personBusy, setupStartHour, setupEndHour) {
   // Check if this batch can start in parallel with previous batches
   const availableMachines = eligibleMachines.filter(machine => {
@@ -1298,24 +1446,63 @@ function assignSetupPerson(setupStart, setupEnd, personBusy, personAssignments, 
   const startH = setupStartDate.getHours();
   const shiftLength = (setupEndHour - setupStartHour) / 2; 
   const firstShiftEnd = setupStartHour + shiftLength;
-  const shiftPeople = startH < firstShiftEnd ? ['A','B'] : ['C','D'];
   
-  // FIXED: Only check for overlaps with setup duration, not run duration
-  const available = shiftPeople.filter(p => countOverlaps(setupStartDate, new Date(setupEnd), personBusy[p]) === 0);
+  // SHIFT ENFORCEMENT: Only assign operators within their shift windows
+  let shiftPeople;
+  if (startH < firstShiftEnd) {
+    // Morning shift (06:00-14:00) → Operators A, B
+    shiftPeople = ['A','B'];
+  } else {
+    // Afternoon shift (14:00-22:00) → Operators C, D
+    shiftPeople = ['C','D'];
+  }
+  
+  // AGGRESSIVE OPERATOR ASSIGNMENT: Find ANY available operator in the shift
+  const available = shiftPeople.filter(p => {
+    const busyPeriods = personBusy[p] || [];
+    if (busyPeriods.length === 0) return true; // Never busy, always available
+    
+    // Check if person is free during setup window
+    return !busyPeriods.some(period => {
+      const periodStart = new Date(period.start);
+      const periodEnd = new Date(period.end);
+      return !(setupStartDate.getTime() >= periodEnd.getTime() || new Date(setupEnd).getTime() <= periodStart.getTime());
+    });
+  });
   
   if (available.length > 0) { 
+    // Prioritize least assigned operator for load balancing
     available.sort((a,b)=>{ 
-      const ca=personAssignments[a], cb=personAssignments[b]; 
+      const ca=personAssignments[a] || 0, cb=personAssignments[b] || 0; 
       if(ca!==cb) return ca-cb; 
       return a.localeCompare(b); 
     }); 
     const selectedPerson = available[0];
-    Logger.log(`[SETUP-REUSE] Person ${selectedPerson} assigned for setup at ${formatDateTime(setupStart)}`);
+    Logger.log(`[SETUP-REUSE] Person ${selectedPerson} assigned for setup at ${formatDateTime(setupStart)} (${startH < firstShiftEnd ? 'morning' : 'afternoon'} shift) - ${available.length} operators available`);
     return selectedPerson; 
   }
   
-  Logger.log(`[SETUP-REUSE] No available persons in shift ${startH < firstShiftEnd ? '1' : '2'}, using ${shiftPeople[0]}`);
-  return shiftPeople[0];
+  // If no operators available, find the one who becomes available soonest
+  let earliestAvailable = null;
+  let earliestTime = new Date(globalStart);
+  
+  for (const person of shiftPeople) {
+    const busyPeriods = personBusy[person] || [];
+    if (busyPeriods.length === 0) {
+      earliestAvailable = person;
+      break;
+    }
+    
+    const lastBusyPeriod = busyPeriods[busyPeriods.length - 1];
+    const lastEndTime = new Date(lastBusyPeriod.end);
+    if (lastEndTime.getTime() < earliestTime.getTime()) {
+      earliestTime = lastEndTime;
+      earliestAvailable = person;
+    }
+  }
+  
+  Logger.log(`[SETUP-REUSE] No operators available in ${startH < firstShiftEnd ? 'morning' : 'afternoon'} shift, using ${earliestAvailable} (available at ${formatDateTime(earliestTime)})`);
+  return earliestAvailable || shiftPeople[0];
 }
 
 // Browser-compatible date formatting functions
@@ -1341,7 +1528,7 @@ function formatDateTimeForSetup(date) {
 
 function formatGlobalHolidayPeriods(holidayPeriods) { 
   if (!holidayPeriods || holidayPeriods.length === 0) return ''; 
-  return holidayPeriods.map(period => period.type === 'SINGLE_DAY' ? formatDateTime(period.start) : `${formatDateTime(period.start)} to ${formatDateTime(period.end)}`).join('; '); 
+  return holidayPeriods.map(period => period.type === 'SINGLE_DAY' ? formatDateTime(period.start) : `${formatDateTime(period.start)} to ${formatDateTime(period.end)}`).join('; ');
 }
 
 function parseHolidayEntry(holidayStr) { 
