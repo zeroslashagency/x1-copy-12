@@ -570,9 +570,18 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               
               Logger.log(`[BATCH-INDEPENDENCE] ${order.partNumber} Batch${batchId} Op${op.OperationSeq}: Machine ${selectedMachine} available from ${formatDateTime(machineAvailableFrom)}`);
 
+              // === BYPASS MACHINE DEPENDENCIES FOR BATCH 2 ===
+              // For Batch 2, ignore all machine availability constraints
+              let effectiveMachineAvailableFrom = machineAvailableFrom;
+              if (bi > 0) {
+                effectiveMachineAvailableFrom = new Date(globalStart);
+                effectiveMachineAvailableFrom.setHours(6, 0, 0, 0);
+                Logger.log(`[FORCE-PARALLEL] Batch ${batchId}: Bypassing machine availability, using 06:00 start`);
+              }
+
               // ===== Enforcement: SetupStart must not be earlier than previous operation's FIRST-PIECE completion
               const prevFirstPieceDone = (prevPieceRunEnds && prevPieceRunEnds.length > 0) ? new Date(prevPieceRunEnds[0]) : null;
-              const machineAvailableFromCalendar = machineAvailableFrom;
+              const machineAvailableFromCalendar = effectiveMachineAvailableFrom;
               const setupDurationMs = setupMin * 60 * 1000;
 
               // === BATCH INDEPENDENCE FIXES ===
@@ -626,7 +635,7 @@ function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
               if (bi > 0) { // Not the first batch
                 const forceStartTime = new Date(globalStart);
                 forceStartTime.setHours(6, 0, 0, 0); // Force 06:00 start
-                finalBatchStart = Math.max(earliestStartMs, forceStartTime.getTime());
+                finalBatchStart = forceStartTime.getTime(); // CRITICAL FIX: Force 06:00 regardless of dependencies
                 Logger.log(`[FORCE-PARALLEL] Batch ${batchId}: Forcing start to 06:00 (${formatDateTime(new Date(finalBatchStart))})`);
               }
               
