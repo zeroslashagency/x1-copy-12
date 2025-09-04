@@ -338,9 +338,14 @@ function findOptimalPerson(setupStart, setupEnd, globalPersonBusy, setupStartHou
     shiftPersons = ['A', 'B']; // Default to morning shift for edge cases
   }
   
+  Logger.log(`[PERSON-ASSIGNMENT] Checking shift persons: ${shiftPersons.join(', ')} for setup at ${formatDateTime(setupStart)}`);
+  
   // Check for immediately available person (optimization for reuse)
   for (const person of shiftPersons) {
-    if (isPersonAvailable(person, setupStart, setupEnd, globalPersonBusy)) {
+    const isAvailable = isPersonAvailable(person, setupStart, setupEnd, globalPersonBusy);
+    Logger.log(`[PERSON-ASSIGNMENT] Person ${person} available: ${isAvailable}`);
+    if (isAvailable) {
+      Logger.log(`[PERSON-ASSIGNMENT] Selected Person ${person} for immediate assignment`);
       return person;
     }
   }
@@ -351,12 +356,14 @@ function findOptimalPerson(setupStart, setupEnd, globalPersonBusy, setupStartHou
   
   for (const person of shiftPersons) {
     const availableTime = getPersonNextAvailableTime(person, setupStart, globalPersonBusy);
+    Logger.log(`[PERSON-ASSIGNMENT] Person ${person} next available: ${formatDateTime(availableTime)}`);
     if (!earliestTime || availableTime.getTime() < earliestTime.getTime()) {
       earliestTime = availableTime;
       earliestAvailable = person;
     }
   }
   
+  Logger.log(`[PERSON-ASSIGNMENT] Selected earliest available: Person ${earliestAvailable} at ${formatDateTime(earliestTime)}`);
   return earliestAvailable;
 }
 
@@ -369,7 +376,8 @@ function isPersonAvailable(person, setupStart, setupEnd, globalPersonBusy) {
   return !busyPeriods.some(period => {
     const periodStart = new Date(period.start);
     const periodEnd = new Date(period.end);
-    return !(setupStart.getTime() >= periodEnd.getTime() || setupEnd.getTime() <= periodStart.getTime());
+    // FIXED: Correct overlap detection logic
+    return (setupStart.getTime() < periodEnd.getTime() && setupEnd.getTime() > periodStart.getTime());
   });
 }
 
