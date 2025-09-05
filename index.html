@@ -7,6 +7,7 @@
     <!-- Add Supabase Auth UI CSS -->
     <link rel="stylesheet" href="https://unpkg.com/@supabase/auth-ui-shared@0.0.11/dist/components.css" />
     <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="excel_export.js"></script>
     <style>
         * {
             margin: 0;
@@ -1305,8 +1306,11 @@
             <button class="btn btn-success" onclick="runSchedule()">
                 ▶️ Run Schedule
             </button>
-            <button class="btn btn-secondary" onclick="exportToExcel()" id="exportBtn" disabled>
+            <button class="btn btn-secondary" onclick="exportToExcel()" id="exportBtn" disabled title="Export to Excel with 4 sheets: Output, Client_Out, Setup_Output, Output_2">
                 ⬇️ Export Excel
+            </button>
+            <button class="btn btn-info" onclick="showExportStats()" id="statsBtn" disabled title="Show export statistics">
+                📊 Stats
             </button>
         </div>
     </div>
@@ -2130,6 +2134,7 @@
                     scheduleResults = single; // show only this order
                     displayResults();
                     document.getElementById('exportBtn').disabled = false;
+                    document.getElementById('statsBtn').disabled = false;
                 } catch (error) {
                     console.error('Scheduling error (single):', error);
                     showAlert('Error generating schedule for updated order: ' + error.message, 'error');
@@ -2205,6 +2210,7 @@
                     scheduleResults = processOrders();
                     displayResults();
                     document.getElementById('exportBtn').disabled = false;
+                    document.getElementById('statsBtn').disabled = false;
                     showAlert('Schedule generated successfully!', 'success');
                 } catch (error) {
                     console.error('Scheduling error:', error);
@@ -4365,24 +4371,47 @@
 
         function exportToExcel() {
             if (!scheduleResults.rows || scheduleResults.rows.length === 0) {
-                alert('No data to export');
+                showAlert('No data to export', 'error');
                 return;
             }
 
             try {
-                const ws = XLSX.utils.json_to_sheet(scheduleResults.rows);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "Schedule Results");
-
-                // Generate filename with timestamp
-                const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-                const filename = `production_schedule_${timestamp}.xlsx`;
-
-                XLSX.writeFile(wb, filename);
-                showAlert('Excel file exported successfully!', 'success');
+                // Use the ExcelExporter class directly to avoid recursion
+                const exporter = new window.ExcelExporter();
+                const result = exporter.exportToExcel(scheduleResults);
+                
+                if (result.success) {
+                    showAlert(result.message, 'success');
+                    console.log('Excel file exported:', result.filename);
+                } else {
+                    showAlert(result.message, 'error');
+                }
             } catch (error) {
                 console.error('Export error:', error);
                 showAlert('Error exporting to Excel: ' + error.message, 'error');
+            }
+        }
+
+        function showExportStats() {
+            if (!scheduleResults.rows || scheduleResults.rows.length === 0) {
+                showAlert('No data to show statistics for', 'error');
+                return;
+            }
+
+            try {
+                const exporter = new window.ExcelExporter();
+                const stats = exporter.getExportStats(scheduleResults);
+                
+                const message = `Export Statistics:\n` +
+                    `• Total Operations: ${stats.totalOperations}\n` +
+                    `• Unique Parts: ${stats.uniqueParts}\n` +
+                    `• Sheets: ${stats.sheets.join(', ')}\n` +
+                    `• Ready to export!`;
+                
+                showAlert(message, 'info');
+            } catch (error) {
+                console.error('Stats error:', error);
+                showAlert('Error getting export statistics: ' + error.message, 'error');
             }
         }
 
