@@ -4376,6 +4376,12 @@
             }
 
             try {
+                // Check if ExcelExporter is available
+                if (typeof window.ExcelExporter === 'undefined') {
+                    showAlert('Excel export module not loaded. Please refresh the page.', 'error');
+                    return;
+                }
+
                 // Use the ExcelExporter class directly to avoid recursion
                 const exporter = new window.ExcelExporter();
                 const result = exporter.exportToExcel(scheduleResults);
@@ -4391,6 +4397,23 @@
                 showAlert('Error exporting to Excel: ' + error.message, 'error');
             }
         }
+
+        function debugExcelExport() {
+            console.log('Checking Excel export availability...');
+            console.log('window.ExcelExporter:', typeof window.ExcelExporter);
+            console.log('window.exportToExcel:', typeof window.exportToExcel);
+            console.log('window.XLSX:', typeof window.XLSX);
+            
+            if (typeof window.ExcelExporter !== 'undefined') {
+                console.log('ExcelExporter class:', window.ExcelExporter);
+                console.log('ExcelExporter prototype:', window.ExcelExporter.prototype);
+            }
+        }
+
+        // Call debug function when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(debugExcelExport, 1000); // Wait 1 second for scripts to load
+        });
 
         function showExportStats() {
             if (!scheduleResults.rows || scheduleResults.rows.length === 0) {

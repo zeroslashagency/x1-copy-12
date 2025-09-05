@@ -431,13 +431,17 @@ function exportToExcel(scheduleData, filename = null) {
     return exporter.exportToExcel(scheduleData, filename);
 }
 
-// Export for use in different environments
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ExcelExporter, exportToExcel };
-}
-
 // Make available globally in browser
 if (typeof window !== 'undefined') {
     window.ExcelExporter = ExcelExporter;
     window.exportToExcel = exportToExcel;
+    
+    // Debug log to confirm loading
+    console.log('Excel export module loaded successfully');
+    console.log('ExcelExporter available:', typeof window.ExcelExporter);
+}
+
+// Export for use in different environments
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { ExcelExporter, exportToExcel };
 }
