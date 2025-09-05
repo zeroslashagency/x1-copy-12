@@ -11,6 +11,14 @@ app.use(cors());
 app.options('*', cors());
 app.use(express.json({ limit: '10mb' }));
 
+// Serve static files (HTML, JS, CSS, etc.)
+app.use(express.static(__dirname));
+
+// Serve index.html as default
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ ok: true, service: 'local-writer', cwd: process.cwd() });

@@ -1362,6 +1362,7 @@
     <script src="app.js"></script>
     <script src="data.js"></script>
     <script src="x10.js"></script>
+    <script src="x10-browser.js?v=4"></script>
     
     <script>
         // Initialize the app after checking authentication
@@ -2158,28 +2159,34 @@
                 operations = operations.filter(op => selectedSeqs.includes(op.OperationSeq));
             }
 
-            const opResults = calculatePieceLevelScheduling(operations, order, machineSchedule, operatorSchedule);
-            opResults.forEach(opResult => {
-                machineSchedule[opResult.Machine] = opResult.actualRunEnd;
-                operatorSchedule[opResult.Person] = opResult.actualRunEnd;
-                results.push({
-                    PartNumber: order.partNumber,
-                    Order_Quantity: order.quantity,
-                    Priority: order.priority,
-                    Batch_ID: `${order.partNumber}-${opResult.OperationSeq}`,
-                    Batch_Qty: order.quantity,
-                    OperationSeq: opResult.OperationSeq,
-                    OperationName: opResult.OperationName,
-                    Machine: opResult.Machine,
-                    Person: opResult.Person,
-                    SetupStart: formatDateTime(opResult.SetupStart),
-                    SetupEnd: formatDateTime(opResult.SetupEnd),
-                    RunStart: formatDateTime(opResult.RunStart),
-                    RunEnd: formatDateTime(opResult.RunEnd),
-                    Timing: opResult.Timing,
-                    DueDate: formatDate(order.dueDate)
+            const engineResult = runSchedulingInBrowser([order], operations);
+            if (engineResult.success) {
+                engineResult.outputData.mainOutput.forEach(row => {
+                    const [partNumber, orderQty, priority, batchId, batchQty, opSeq, opName, machine, person, setupStart, setupEnd, runStart, runEnd, timing, dueDate] = row;
+                    
+                    // Update machine and operator schedules
+                    machineSchedule[machine] = new Date(runEnd);
+                    operatorSchedule[person] = new Date(runEnd);
+                    
+                    results.push({
+                        PartNumber: partNumber,
+                        Order_Quantity: orderQty,
+                        Priority: priority,
+                        Batch_ID: batchId,
+                        Batch_Qty: batchQty,
+                        OperationSeq: opSeq,
+                        OperationName: opName,
+                        Machine: machine,
+                        Person: person,
+                        SetupStart: setupStart,
+                        SetupEnd: setupEnd,
+                        RunStart: runStart,
+                        RunEnd: runEnd,
+                        Timing: timing,
+                        DueDate: dueDate
+                    });
                 });
-            });
+            }
             return { rows: results, alerts };
         }
 
@@ -2272,7 +2279,19 @@
                 batches.forEach((batch, idx) => {
                     const batchId = `${order.partNumber}-${idx + 1}`;
                     const batchOrder = { ...order, quantity: batch.qty };
-                    const operationResults = calculatePieceLevelScheduling(operations, batchOrder, machineSchedule, operatorSchedule);
+                    const engineResult = runSchedulingInBrowser([batchOrder], operations);
+                    const operationResults = engineResult.success ? engineResult.outputData.mainOutput.map(row => ({
+                        OperationSeq: row[5],
+                        OperationName: row[6],
+                        Machine: row[7],
+                        Person: row[8],
+                        SetupStart: new Date(row[9]),
+                        SetupEnd: new Date(row[10]),
+                        RunStart: new Date(row[11]),
+                        RunEnd: new Date(row[12]),
+                        Timing: row[13],
+                        actualRunEnd: new Date(row[12])
+                    })) : [];
 
                     // Determine batch completion and due compliance
                     const lastOp = operationResults[operationResults.length - 1];
@@ -2492,7 +2511,7 @@
                 setupEnd,
                 runStart: runSchedule.runStart,
                 runEnd: runSchedule.runEnd,
-                timingDescription: `${formatDuration(totalElapsed)} total (${totalPausedTime > 0 ? formatDuration(totalPausedTime) + ' paused, ' : ''}${formatDuration(actualWork)} work)`
+                timingDescription: `${formatDuration(totalElapsed)} (${formatDuration(actualWork)} Work)`
             };
         }
 
@@ -3045,150 +3064,7 @@
             return time; // Within window
         }
 
-        function scheduleSetupWithinWindow(startTime, durationMinutes, setupWindow) {
-            let currentTime = new Date(startTime);
-            let remainingTime = durationMinutes;
-            let totalPausedTime = 0;
-            const actualStart = new Date(currentTime);
-            
-            while (remainingTime > 0) {
-                const hour = currentTime.getHours();
-                
-                // Check if we're within setup window
-                if (hour < setupWindow.start || hour >= setupWindow.end) {
-                    // Outside window, move to next window start
-                    const date = new Date(currentTime.getFullYear(), currentTime.getMonth(), currentTime.getDate());
-                    let nextWindowStart;
-                    
-                    if (hour < setupWindow.start) {
-                        nextWindowStart = new Date(date.getTime() + (setupWindow.start * 60 * 60 * 1000));
-                    } else {
-                        nextWindowStart = new Date(date.getTime() + (24 + setupWindow.start) * 60 * 60 * 1000);
-                    }
-                    
-                    const pauseTime = (nextWindowStart.getTime() - currentTime.getTime()) / (60 * 1000);
-                    totalPausedTime += pauseTime;
-                    currentTime = nextWindowStart;
-                    continue;
-                }
-                
-                // Calculate time available in current window
-                const windowEndTime = new Date(currentTime.getFullYear(), currentTime.getMonth(), currentTime.getDate(), setupWindow.end);
-                const availableInWindow = Math.max(0, (windowEndTime.getTime() - currentTime.getTime()) / (60 * 1000));
-                
-                if (availableInWindow >= remainingTime) {
-                    // Can complete setup in current window
-                    currentTime = new Date(currentTime.getTime() + (remainingTime * 60 * 1000));
-                    remainingTime = 0;
-                } else {
-                    // Need to continue in next window
-                    remainingTime -= availableInWindow;
-                    currentTime = windowEndTime;
-                }
-            }
-            
-            return {
-                start: actualStart,
-                end: currentTime,
-                pausedTime: totalPausedTime
-            };
-        }
-
-        function scheduleRunContinuous(startTime, durationMinutes) {
-            // Run phase can continue 24/7, only paused by breakdowns/holidays
-            const endTime = new Date(startTime.getTime() + (durationMinutes * 60 * 1000));
-            
-            // Check for breakdown machines and holidays from advanced settings
-            let pausedTime = 0;
-            
-            // Add breakdown time if applicable
-            if (advancedSettings.breakdownDateTime) {
-                // Parse breakdown time and add to paused time
-                // This is a simplified implementation
-                pausedTime += 60; // Assume 1 hour breakdown
-            }
-            
-            return {
-                start: startTime,
-                end: new Date(endTime.getTime() + (pausedTime * 60 * 1000)),
-                pausedTime: pausedTime
-            };
-        }
-
-        function scheduleWithinShifts(startTime, durationMinutes) {
-            let currentTime = new Date(startTime);
-            let remainingTime = durationMinutes;
-            let totalPausedTime = 0;
-            const actualStart = new Date(currentTime);
-            
-            while (remainingTime > 0) {
-                const shiftEnd = getShiftEnd(currentTime);
-                const availableInShift = Math.max(0, (shiftEnd.getTime() - currentTime.getTime()) / (60 * 1000));
-                
-                if (availableInShift >= remainingTime) {
-                    // Can complete in current shift
-                    currentTime = new Date(currentTime.getTime() + (remainingTime * 60 * 1000));
-                    remainingTime = 0;
-                } else {
-                    // Need to continue in next shift
-                    remainingTime -= availableInShift;
-                    const nextShiftStart = getNextShiftAfter(shiftEnd);
-                    const pauseTime = (nextShiftStart.getTime() - shiftEnd.getTime()) / (60 * 1000);
-                    totalPausedTime += pauseTime;
-                    currentTime = nextShiftStart;
-                }
-            }
-            
-            return {
-                start: actualStart,
-                end: currentTime,
-                pausedTime: totalPausedTime
-            };
-        }
-
-        function getShiftEnd(time) {
-            const date = new Date(time.getFullYear(), time.getMonth(), time.getDate());
-            const hour = time.getHours();
-            
-            if (hour < 14) {
-                // Morning shift ends at 14:00
-                return new Date(date.getTime() + (14 * 60 * 60 * 1000));
-            } else {
-                // Evening shift ends at 22:00
-                return new Date(date.getTime() + (22 * 60 * 60 * 1000));
-            }
-        }
-
-        function getNextShiftAfter(time) {
-            const date = new Date(time.getFullYear(), time.getMonth(), time.getDate());
-            const hour = time.getHours();
-            
-            if (hour < 6) {
-                // Next shift is morning at 06:00
-                return new Date(date.getTime() + (6 * 60 * 60 * 1000));
-            } else if (hour < 14) {
-                // Next shift is evening at 14:00
-                return new Date(date.getTime() + (14 * 60 * 60 * 1000));
-            } else {
-                // Next shift is tomorrow morning at 06:00
-                return new Date(date.getTime() + (24 + 6) * 60 * 60 * 1000);
-            }
-        }
-
-        function alignToShiftStart(time) {
-            const hour = time.getHours();
-            const date = new Date(time.getFullYear(), time.getMonth(), time.getDate());
-            
-            if (hour < 6) {
-                return new Date(date.getTime() + (6 * 60 * 60 * 1000)); // 06:00
-            } else if (hour < 14) {
-                return time; // Already in morning shift
-            } else if (hour < 22) {
-                return time; // Already in evening shift
-            } else {
-                return new Date(date.getTime() + (24 + 6) * 60 * 60 * 1000); // Next day 06:00
-            }
-        }
+        // Scheduling functions moved to x10-browser.js engine
 
         function formatTiming(totalElapsedMs, pausedTimeMinutes) {
             const totalMinutes = Math.floor(totalElapsedMs / (60 * 1000));
@@ -4251,7 +4127,7 @@
                     FirstPieceDone: firstPieceDone,
                     LastPieceDone: lastPieceDone,
                     PieceDetails: pieceRunTimes,
-                    Timing: `${formatDuration(totalElapsed)} total (${pausedTime > 0 ? formatDuration(pausedTime) + ' paused, ' : ''}${formatDuration(actualWork)} work)`
+                    Timing: `${formatDuration(totalElapsed)} (${formatDuration(actualWork)} Work)`
                 });
                 
                 // Update machine and operator schedules to prevent overlaps
