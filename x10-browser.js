@@ -1,11 +1,11 @@
 /**
- * FIXED SCHEDULING ENGINE - Proper Machine Exclusivity
- * Prevents machine overlaps and follows your exact desired pattern
+ * SEQUENTIAL PIECE-LEVEL SCHEDULING ENGINE
+ * Enforces sequential completion while maintaining piece-level handoff
+ * Backend engine for the Production Scheduler UI
  */
 
 // Configuration
 const CONFIG = {
-  MAX_CONCURRENT_SETUPS: 1, // Only ONE operator at a time
   SETUP_WINDOW_START: 6,
   SETUP_WINDOW_END: 22,
   OPERATORS: ['A', 'B', 'C', 'D'],
@@ -27,15 +27,17 @@ const CONFIG = {
 // Logger
 const Logger = {
   log: function(message) {
-      console.log(`[SCHEDULER] ${message}`);
+    console.log(`[SEQUENTIAL-PIECE-SCHEDULER] ${message}`);
   }
 };
 
-// Fixed scheduling engine
-class FixedSchedulingEngine {
+// Sequential Piece-Level Scheduling Engine
+class SequentialPieceLevelSchedulingEngine {
   constructor() {
     this.operatorSchedule = {};
     this.machineSchedule = {};
+    this.pieceFlow = {}; // Track piece-by-piece flow
+    this.batchSequences = {}; // Track operation sequences per batch
     this.resetSchedules();
   }
 
@@ -47,6 +49,9 @@ class FixedSchedulingEngine {
     CONFIG.MACHINES.forEach(machine => {
       this.machineSchedule[machine] = [];
     });
+    
+    this.pieceFlow = {};
+    this.batchSequences = {};
   }
 
   // Smart Batch Splitting Algorithm
@@ -112,73 +117,6 @@ class FixedSchedulingEngine {
     return batches;
   }
 
-  // Get operator for operation based on batch and operation sequence
-  getSequentialOperator(operationSeq, batchId) {
-    // Handle specific patterns for B01 and B02 (maintain compatibility)
-    if (batchId === 'B01') {
-      const pattern = ['A', 'B', 'A', 'B', 'A']; // B01 pattern: A, B, A, B, A
-      return pattern[(operationSeq - 1) % 5];
-    } else if (batchId === 'B02') {
-      const pattern = ['B', 'A', 'C', 'D', 'B']; // B02 pattern: B, A, C, D, B
-      return pattern[(operationSeq - 1) % 5];
-    }
-    
-    // Smart operator assignment for additional batches
-    const batchNumber = parseInt(batchId.replace('B', ''));
-    const operatorPatterns = [
-      ['A', 'B', 'A', 'B', 'A'], // B01, B05, B09...
-      ['B', 'A', 'C', 'D', 'B'], // B02, B06, B10...
-      ['C', 'D', 'C', 'D', 'C'], // B03, B07, B11...
-      ['D', 'C', 'A', 'B', 'D']  // B04, B08, B12...
-    ];
-    
-    const patternIndex = (batchNumber - 1) % 4;
-    const pattern = operatorPatterns[patternIndex];
-    return pattern[(operationSeq - 1) % 5];
-  }
-
-  // Get available machine for operation - ensures machine exclusivity
-  getAvailableMachine(operationSeq, batchId, machineAvailability, eligibleMachines) {
-    // First try specific machine pattern if it's available
-    let preferredMachine;
-    
-    // Handle specific patterns for B01 and B02 (maintain compatibility)
-    if (batchId === 'B01') {
-      const machines = ['VMC 1', 'VMC 2', 'VMC 7', 'VMC 3', 'VMC 4']; // B01 machine pattern
-      preferredMachine = machines[(operationSeq - 1) % 5];
-    } else if (batchId === 'B02') {
-      const machines = ['VMC 5', 'VMC 6', 'VMC 5', 'VMC 1', 'VMC 2']; // B02 machine pattern
-      preferredMachine = machines[(operationSeq - 1) % 5];
-  } else {
-      // Smart machine assignment for additional batches
-      const batchNumber = parseInt(batchId.replace('B', ''));
-      const machinePatterns = [
-        ['VMC 1', 'VMC 2', 'VMC 7', 'VMC 3', 'VMC 4'], // B01, B05, B09...
-        ['VMC 5', 'VMC 6', 'VMC 5', 'VMC 1', 'VMC 2'], // B02, B06, B10...
-        ['VMC 3', 'VMC 4', 'VMC 1', 'VMC 5', 'VMC 6'], // B03, B07, B11...
-        ['VMC 7', 'VMC 1', 'VMC 3', 'VMC 4', 'VMC 2']  // B04, B08, B12...
-      ];
-      
-      const patternIndex = (batchNumber - 1) % 4;
-      const pattern = machinePatterns[patternIndex];
-      preferredMachine = pattern[(operationSeq - 1) % 5];
-    }
-    
-    // Check if preferred machine is available
-    if (machineAvailability[preferredMachine]) {
-      return preferredMachine;
-    }
-    
-    // Find first available machine from eligible machines
-    for (const machine of eligibleMachines) {
-      if (machineAvailability[machine]) {
-        return machine;
-      }
-    }
-    
-    // If no machine available, return preferred machine (will be delayed)
-    return preferredMachine;
-  }
 
   // Calculate exact PN11001 setup timing to match your desired pattern
   calculateExactPN11001SetupTiming(operationSeq, batchId, globalStart, setupTimeMin, prevFirstPieceReady, machineAvailability, operatorAvailability, selectedMachine, operator) {
@@ -462,31 +400,167 @@ class FixedSchedulingEngine {
     }
   }
 
+  // Create a proper date from string
+  createDate(dateString) {
+    if (!dateString) {
+      return new Date('2025-09-01 06:00');
+    }
+    
+    if (typeof dateString === 'string' && dateString.includes('T')) {
+      return new Date(dateString);
+    } else if (typeof dateString === 'string') {
+      return new Date(dateString.replace(' ', 'T') + ':00');
+    } else if (dateString instanceof Date) {
+      return new Date(dateString);
+    } else {
+      return new Date('2025-09-01 06:00');
+    }
+  }
+
+  // Calculate piece completion times for an operation - SEQUENTIAL
+  calculatePieceTimes(setupEnd, cycleTimeMin, batchQty) {
+    const pieceTimes = [];
+    let currentTime = new Date(setupEnd);
+    
+    Logger.log(`[PIECE-TIMES] Starting piece calculation: setupEnd=${setupEnd.toISOString()}, cycleTime=${cycleTimeMin}min, batchQty=${batchQty}`);
+    
+    for (let i = 0; i < batchQty; i++) {
+      const pieceStart = new Date(currentTime);
+      const pieceEnd = new Date(pieceStart.getTime() + cycleTimeMin * 60000);
+      
+      pieceTimes.push({
+        pieceNumber: i + 1,
+        start: pieceStart,
+        end: pieceEnd
+      });
+      
+      if (i < 3 || i >= batchQty - 3) { // Log first 3 and last 3 pieces
+        Logger.log(`[PIECE-TIMES] Piece ${i + 1}: ${pieceStart.toISOString().substring(11, 16)} → ${pieceEnd.toISOString().substring(11, 16)}`);
+      }
+      
+      currentTime = pieceEnd;
+    }
+    
+    Logger.log(`[PIECE-TIMES] Last piece finishes at: ${pieceTimes[pieceTimes.length - 1].end.toISOString()}`);
+    return pieceTimes;
+  }
+
+  // Calculate setup start time based on TRUE piece-level scheduling
+  calculateSetupStart(batchId, operationSeq, requestedStart) {
+    if (operationSeq === 1) {
+      Logger.log(`[SETUP-START] Op1 starts at requested time: ${requestedStart.toISOString()}`);
+      return new Date(requestedStart);
+    }
+    
+    // TRUE piece-level scheduling:
+    // Op2 starts when Op1 first piece is ready
+    // Op3+ start when previous operation's first piece is ready
+    
+    const prevOpKey = `${batchId}-${operationSeq - 1}`;
+    if (this.pieceFlow[prevOpKey]) {
+      const prevOpPieces = this.pieceFlow[prevOpKey];
+      const firstPieceTime = prevOpPieces[0].end; // First piece completion
+      Logger.log(`[SETUP-START] Op${operationSeq} starts when Op${operationSeq-1} first piece ready at ${firstPieceTime.toISOString()}`);
+      return firstPieceTime;
+    }
+    
+    Logger.log(`[SETUP-START] Op${operationSeq} starts at requested time (no previous operation): ${requestedStart.toISOString()}`);
+    return new Date(requestedStart);
+  }
+
+  // Calculate run end time - SEQUENTIAL enforcement
+  calculateRunEnd(batchId, operationSeq, pieceTimes, setupStart) {
+    const actualLastPieceEnd = pieceTimes[pieceTimes.length - 1].end;
+    
+    // CRITICAL: Enforce sequential completion
+    // Each operation must finish AFTER the previous operation finishes
+    const prevOpKey = `${batchId}-${operationSeq - 1}`;
+    if (this.batchSequences[prevOpKey]) {
+      const previousRunEnd = this.batchSequences[prevOpKey].runEnd;
+      
+      // If current operation would finish before previous, adjust it
+      if (actualLastPieceEnd < previousRunEnd) {
+        Logger.log(`[RUN-END-SEQUENTIAL] Op${operationSeq} would finish at ${actualLastPieceEnd.toISOString()} but previous Op${operationSeq-1} finishes at ${previousRunEnd.toISOString()}`);
+        
+        // Calculate the time needed for this operation
+        const operationDuration = actualLastPieceEnd.getTime() - setupStart.getTime();
+        
+        // Start this operation after the previous one finishes
+        const sequentialStart = new Date(previousRunEnd.getTime());
+        const sequentialEnd = new Date(sequentialStart.getTime() + operationDuration);
+        
+        Logger.log(`[RUN-END-SEQUENTIAL] Adjusting Op${operationSeq} to start at ${sequentialStart.toISOString()} and finish at ${sequentialEnd.toISOString()}`);
+        return sequentialEnd;
+      }
+    }
+    
+    Logger.log(`[RUN-END] Op${operationSeq} natural completion: ${actualLastPieceEnd.toISOString()}`);
+    return actualLastPieceEnd;
+  }
+
+  // Get available operator for setup
+  getAvailableOperator(setupStart, setupEnd) {
+    return CONFIG.OPERATORS[0]; // Simple fallback
+  }
+
+  // Get available machine for operation
+  getAvailableMachine(operationSeq, setupStart, runEnd) {
+    return CONFIG.MACHINES[operationSeq - 1] || CONFIG.MACHINES[0]; // Simple assignment
+  }
+
+  // Book resources
+  bookResources(operator, machine, setupStart, setupEnd, runEnd) {
+    this.operatorSchedule[operator] = this.operatorSchedule[operator] || [];
+    this.machineSchedule[machine] = this.machineSchedule[machine] || [];
+    
+    this.operatorSchedule[operator].push({
+      start: setupStart,
+      end: setupEnd,
+      type: 'setup'
+    });
+    
+    this.machineSchedule[machine].push({
+      start: setupStart,
+      end: runEnd,
+      type: 'operation'
+    });
+  }
+
+  // Format duration
+  formatDuration(ms) {
+    if (!ms || ms <= 0) return '0M';
+    let minutes = Math.round(ms / 60000);
+    const days = Math.floor(minutes / 1440);
+    minutes -= days * 1440;
+    const hours = Math.floor(minutes / 60);
+    minutes -= hours * 60;
+    const parts = [];
+    if (days > 0) parts.push(`${days}D`);
+    if (hours > 0) parts.push(`${hours}H`);
+    if (minutes > 0) parts.push(`${minutes}M`);
+    return parts.join(' ') || '0M';
+  }
+
   // Main scheduling function
   scheduleOperations(inputData, operationMaster) {
-    Logger.log('=== FIXED SCHEDULING ENGINE STARTED ===');
+    Logger.log('=== SEQUENTIAL PIECE-LEVEL SCHEDULING ENGINE STARTED ===');
     
     const results = [];
-    const globalStart = new Date('2025-09-01 06:00:00'); // Match your exact desired date
     
-    // Track machine and operator availability to prevent overlaps
-    const machineAvailability = {};
-    const operatorAvailability = {};
-    
-    CONFIG.MACHINES.forEach(machine => {
-      machineAvailability[machine] = new Date(globalStart);
-    });
-    
-    CONFIG.OPERATORS.forEach(operator => {
-      operatorAvailability[operator] = new Date(globalStart);
-    });
-    
-    // Process each order
-    inputData.forEach(order => {
-      const operations = operationMaster.filter(op => op.PartNumber === order.partNumber);
-      operations.sort((a, b) => a.OperationSeq - b.OperationSeq);
+    // Process each order SEQUENTIALLY (one part at a time)
+    for (let orderIndex = 0; orderIndex < inputData.length; orderIndex++) {
+      const order = inputData[orderIndex];
+      Logger.log(`Processing ${order.partNumber} Qty: ${order.quantity}`);
       
-      Logger.log(`Processing ${order.partNumber} with ${operations.length} operations`);
+      // Get operations for this part
+      const partOperations = operationMaster.filter(op => 
+        op.PartNumber === order.partNumber
+      ).sort((a, b) => a.OperationSeq - b.OperationSeq);
+      
+      if (partOperations.length === 0) {
+        Logger.log(`No operations found for ${order.partNumber}`);
+        continue;
+      }
       
       // Smart Batch Splitting based on priority and deadline
       const totalQty = order.orderQty || order.quantity || 1;
@@ -497,102 +571,105 @@ class FixedSchedulingEngine {
       // Use smart splitting algorithm
       const batches = this.calculateSmartBatchSplitting(totalQty, priority, dueDate, startDate);
       
-      // Process each batch with overlapping piece-level scheduling
+      // Process each batch
       batches.forEach((batch, batchIndex) => {
         Logger.log(`Processing batch ${batch.batchId} with ${batch.qty} pieces`);
         
-        // Track overlapping piece-level flow for this batch
-        let prevFirstPieceReady = null; // When first piece from previous operation is ready
+        // Calculate start time for this batch
+        let batchStartTime;
+        if (orderIndex === 0 && batchIndex === 0) {
+          // First batch starts at requested time
+          batchStartTime = this.createDate(order.startDateTime || '2025-09-01 06:00');
+          Logger.log(`[BATCH-START] First batch starts at: ${batchStartTime.toISOString()}`);
+        } else {
+          // Subsequent batches start after previous batch completes
+          const lastResult = results[results.length - 1];
+          if (lastResult && lastResult.length > 0 && lastResult[lastResult.length - 1][12]) {
+            const lastRunEnd = lastResult[lastResult.length - 1][12]; // RunEnd column
+            batchStartTime = this.createDate(lastRunEnd);
+            Logger.log(`[BATCH-START] Subsequent batch starts after previous completes: ${batchStartTime.toISOString()}`);
+          } else {
+            batchStartTime = this.createDate(order.startDateTime || '2025-09-01 06:00');
+            Logger.log(`[BATCH-START] Fallback start time: ${batchStartTime.toISOString()}`);
+          }
+        }
         
-        operations.forEach((op, index) => {
-          const operationSeq = op.OperationSeq;
-          const setupTimeMin = op.SetupTime_Min || 70; // Use actual setup time from operation master
-          const cycleTimeMin = op.CycleTime_Min || 1; // Use actual cycle time from operation master
+        // Process each operation for this batch
+        for (let opIndex = 0; opIndex < partOperations.length; opIndex++) {
+          const operation = partOperations[opIndex];
+          const batchId = `${order.partNumber}-${batch.batchId}`;
           
-          // Get available machine and operator for this operation
-          const selectedMachine = this.getAvailableMachine(operationSeq, batch.batchId, machineAvailability, op.EligibleMachines || CONFIG.MACHINES);
-          const operator = this.getSequentialOperator(operationSeq, batch.batchId);
+          Logger.log(`Processing Op${operation.OperationSeq}: ${operation.OperationName}`);
           
-          // Calculate exact PN11001 setup timing for PN11001, normal logic for others
-          let setupStart, setupEnd;
-          if (order.partNumber === 'PN11001') {
-            const result = this.calculateExactPN11001SetupTiming(operationSeq, batch.batchId, globalStart, setupTimeMin, prevFirstPieceReady, machineAvailability, operatorAvailability, selectedMachine, operator);
-            setupStart = result.setupStart;
-            setupEnd = result.setupEnd;
-          } else {
-            // Use normal constrained setup timing for other parts
-            if (operationSeq === 1) {
-              setupStart = new Date(globalStart);
-            } else {
-              setupStart = new Date(prevFirstPieceReady);
-            }
-            
-            const machineAvailableTime = machineAvailability[selectedMachine] || new Date(globalStart);
-            const operatorAvailableTime = operatorAvailability[operator] || new Date(globalStart);
-            
-            setupStart = new Date(Math.max(
-              setupStart.getTime(),
-              machineAvailableTime.getTime(),
-              operatorAvailableTime.getTime()
-            ));
-            
-            setupEnd = new Date(setupStart.getTime() + (setupTimeMin * 60 * 1000));
-          }
+          // Calculate setup start time (TRUE piece-level)
+          const setupStart = this.calculateSetupStart(batchId, operation.OperationSeq, batchStartTime);
           
-          // Calculate exact PN11001 run timing for PN11001, normal logic for others
-          let runStart, runEnd;
-          if (order.partNumber === 'PN11001') {
-            const result = this.calculateExactPN11001RunTiming(operationSeq, batch.batchId, setupEnd, cycleTimeMin, batch.qty, prevFirstPieceReady);
-            runStart = result.runStart;
-            runEnd = result.runEnd;
-          } else {
-            // Use normal piece-level run timing for other parts
-            runStart = new Date(setupEnd);
-            const totalRunTimeMinutes = batch.qty * cycleTimeMin;
-            runEnd = new Date(runStart.getTime() + (totalRunTimeMinutes * 60 * 1000));
-          }
+          // Calculate setup end time
+          const setupEnd = new Date(setupStart.getTime() + operation.SetupTime_Min * 60000);
+          Logger.log(`[SETUP] Op${operation.OperationSeq}: ${setupStart.toISOString()} → ${setupEnd.toISOString()} (${operation.SetupTime_Min}min)`);
           
-          // Calculate when first piece from this operation will be ready
-          const firstPieceReady = new Date(runStart.getTime() + (cycleTimeMin * 60 * 1000));
-          prevFirstPieceReady = firstPieceReady;
+          // Calculate piece times
+          const pieceTimes = this.calculatePieceTimes(setupEnd, operation.CycleTime_Min, batch.qty);
           
-          // Update machine and operator availability
-          machineAvailability[selectedMachine] = new Date(runEnd);
-          operatorAvailability[operator] = new Date(setupEnd); // Operator released after setup
+          // Store piece flow for next operation
+          const opKey = `${batchId}-${operation.OperationSeq}`;
+          this.pieceFlow[opKey] = pieceTimes;
+          
+          // Calculate run end time (SEQUENTIAL enforcement)
+          const runEnd = this.calculateRunEnd(batchId, operation.OperationSeq, pieceTimes, setupStart);
+          
+          // Store operation sequence for tracking
+          this.batchSequences[opKey] = {
+            operationSeq: operation.OperationSeq,
+            runEnd: runEnd
+          };
+          
+          // Get resources
+          const operator = this.getAvailableOperator(setupStart, setupEnd);
+          const machine = this.getAvailableMachine(operation.OperationSeq, setupStart, runEnd);
+          
+          // Book resources
+          this.bookResources(operator, machine, setupStart, setupEnd, runEnd);
+          
+          // Format times
+          const setupStartStr = setupStart.toISOString().substring(0, 19).replace('T', ' ');
+          const setupEndStr = setupEnd.toISOString().substring(0, 19).replace('T', ' ');
+          const runStartStr = setupEnd.toISOString().substring(0, 19).replace('T', ' ');
+          const runEndStr = runEnd.toISOString().substring(0, 19).replace('T', ' ');
           
           // Calculate timing
           const totalMs = runEnd.getTime() - setupStart.getTime();
           const timing = this.formatDuration(totalMs);
           
           // Create result row
-          const result = [
+          const resultRow = [
             order.partNumber,
             totalQty, // Total order quantity
-            order.priority,
-            batch.batchId, // Use batch ID (B01, B02)
+            order.priority || 'Normal',
+            batchId, // Use batch ID
             batch.qty, // Batch quantity
-            operationSeq,
-            op.OperationName,
-            selectedMachine, // Use selected machine
+            operation.OperationSeq,
+            operation.OperationName,
+            machine,
             operator,
-            this.formatDateTime(setupStart),
-            this.formatDateTime(setupEnd),
-            this.formatDateTime(runStart),
-            this.formatDateTime(runEnd),
+            setupStartStr,
+            setupEndStr,
+            runStartStr,
+            runEndStr,
             timing,
-            order.dueDate || ''
+            order.dueDate || '2025-09-03'
           ];
           
-          results.push(result);
+          results.push(resultRow);
           
-          Logger.log(`[EXACT-PN11001-PATTERN] ${batch.batchId} Op${operationSeq}: ${selectedMachine} ${operator} Setup ${this.formatDateTime(setupStart)}→${this.formatDateTime(setupEnd)} | Run ${this.formatDateTime(runStart)}→${this.formatDateTime(runEnd)} | FirstPieceReady: ${this.formatDateTime(firstPieceReady)} | ${timing}`);
-    });
-  });
-  });
-  
-    Logger.log(`=== FIXED SCHEDULING COMPLETED ===`);
+          Logger.log(`[SCHEDULED] Op${operation.OperationSeq}: Setup ${setupStartStr}→${setupEndStr} | Run ${runStartStr}→${runEndStr} | ${timing}`);
+        }
+      });
+    }
+    
+    Logger.log('=== SEQUENTIAL PIECE-LEVEL SCHEDULING COMPLETED ===');
     Logger.log(`Total operations scheduled: ${results.length}`);
-  
+    
     return {
       success: true,
       results: results,
@@ -600,7 +677,7 @@ class FixedSchedulingEngine {
         mainOutput: results,
         secondaryOutput: [],
         setupOutput: [],
-        totalTiming: 'Fixed'
+        totalTiming: 'Sequential Piece-Level'
       }
     };
   }
@@ -608,18 +685,18 @@ class FixedSchedulingEngine {
 
 // Browser-compatible main scheduling function
 function runSchedulingInBrowser(inputData, operationMaster, options = {}) {
-  const engine = new FixedSchedulingEngine();
+  const engine = new SequentialPieceLevelSchedulingEngine();
   return engine.scheduleOperations(inputData, operationMaster);
 }
 
 // Export for use
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { runSchedulingInBrowser, FixedSchedulingEngine, CONFIG };
+  module.exports = { runSchedulingInBrowser, SequentialPieceLevelSchedulingEngine, CONFIG };
 }
 
 // Make available globally
 if (typeof window !== 'undefined') {
   window.runSchedulingInBrowser = runSchedulingInBrowser;
-  window.FixedSchedulingEngine = FixedSchedulingEngine;
+  window.SequentialPieceLevelSchedulingEngine = SequentialPieceLevelSchedulingEngine;
   window.CONFIG = CONFIG;
 }
