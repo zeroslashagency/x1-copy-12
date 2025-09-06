@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Performance & Run End Analysis</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border: 1px solid #e1e8ed;
+        }
+
+        .card h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #27ae60, #229954);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+        }
+
+        .test-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-size: 12px;
+        }
+
+        .results-table th {
+            background: linear-gradient(135deg, #34495e, #2c3e50);
+            color: white;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 11px;
+        }
+
+        .results-table td {
+            padding: 8px 6px;
+            border-bottom: 1px solid #ecf0f1;
+            font-size: 11px;
+        }
+
+        .results-table tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .results-table tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        .status-success {
+            color: #27ae60;
+            font-weight: bold;
+        }
+
+        .status-warning {
+            color: #f39c12;
+            font-weight: bold;
+        }
+
+        .status-danger {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+
+        /* Priority-based table row colors */
+        .results-table tr.priority-urgent {
+            background-color: #ffebee !important;
+            border-left: 4px solid #e74c3c;
+        }
+
+        .results-table tr.priority-high {
+            background-color: #fff3e0 !important;
+            border-left: 4px solid #f39c12;
+        }
+
+        .results-table tr.priority-normal {
+            background-color: #e8f5e8 !important;
+            border-left: 4px solid #27ae60;
+        }
+
+        .results-table tr.priority-low {
+            background-color: #f5f5f5 !important;
+            border-left: 4px solid #95a5a6;
+        }
+
+        .performance-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .metric-card {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .metric-number {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .metric-label {
+            color: #7f8c8d;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+
+        .run-end-analysis {
+            background: #e8f5e8;
+            border: 1px solid #c3e6cb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .run-end-analysis h4 {
+            color: #155724;
+            margin-bottom: 10px;
+        }
+
+        .run-end-item {
+            background: white;
+            border: 1px solid #d4edda;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+        }
+
+        .test-scenario {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .scenario-header {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Performance & Run End Analysis</h1>
+            <p>Comprehensive Testing: Different Quantities, Priorities, and Scenarios</p>
+        </div>
+
+        <div class="card">
+            <h2>🎯 Test Scenarios</h2>
+            <div class="test-controls">
+                <button class="btn btn-success" onclick="runTest('small')">Small Orders (Q50-Q200)</button>
+                <button class="btn btn-warning" onclick="runTest('medium')">Medium Orders (Q300-Q600)</button>
+                <button class="btn btn-danger" onclick="runTest('large')">Large Orders (Q800-Q1500)</button>
+                <button class="btn" onclick="runTest('mixed')">Mixed Priority Test</button>
+                <button class="btn" onclick="runTest('stress')">Stress Test (Q2000+)</button>
+                <button class="btn" onclick="runTest('all')">Run All Tests</button>
+            </div>
+            
+            <div class="test-scenario">
+                <div class="scenario-header">📋 Test Categories</div>
+                <div><strong>Small Orders:</strong> Q50, Q100, Q200 - Test basic functionality</div>
+                <div><strong>Medium Orders:</strong> Q300, Q500, Q600 - Test batch splitting</div>
+                <div><strong>Large Orders:</strong> Q800, Q1000, Q1500 - Test resource management</div>
+                <div><strong>Mixed Priority:</strong> Urgent, High, Normal, Low - Test priority handling</div>
+                <div><strong>Stress Test:</strong> Q2000, Q3000 - Test engine limits</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📈 Performance Metrics</h2>
+            <div class="performance-metrics" id="performanceMetrics">
+                <div class="metric-card">
+                    <div class="metric-number" id="totalOperations">0</div>
+                    <div class="metric-label">Total Operations</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" id="totalBatches">0</div>
+                    <div class="metric-label">Total Batches</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" id="avgBatchSize">0</div>
+                    <div class="metric-label">Avg Batch Size</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" id="conflictsResolved">0</div>
+                    <div class="metric-label">Conflicts Resolved</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" id="onTimeDeliveries">0</div>
+                    <div class="metric-label">On-Time Deliveries</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" id="processingTime">0ms</div>
+                    <div class="metric-label">Processing Time</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>⏰ Run End Analysis</h2>
+            <div id="runEndAnalysis">
+                <div class="loading">Run a test to see run end analysis...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Test Results</h2>
+            <div id="loadingResults" class="loading">
+                Select a test scenario to run...
+            </div>
+            <table class="results-table" id="resultsTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Part</th>
+                        <th>Qty</th>
+                        <th>Priority</th>
+                        <th>Batch</th>
+                        <th>Batch Qty</th>
+                        <th>Op</th>
+                        <th>Operation</th>
+                        <th>Machine</th>
+                        <th>Person</th>
+                        <th>Setup Start</th>
+                        <th>Setup End</th>
+                        <th>Run Start</th>
+                        <th>Run End</th>
+                        <th>Timing</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody">
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>🔍 Detailed Analysis</h2>
+            <div id="detailedAnalysis">
+                <div class="loading">Run a test to see detailed analysis...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load the corrected scheduling engine -->
+    <script src="x10-browser-corrected.js?v=1.0"></script>
+    
+    <script>
+        let currentTestResults = null;
+        let testStartTime = 0;
+
+        // Test data configurations
+        const testConfigs = {
+            small: {
+                orders: [
+                    { partNumber: 'PN1001', quantity: 50, priority: 'Normal', dueDate: '2025-09-03', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN1002', quantity: 100, priority: 'High', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN1003', quantity: 200, priority: 'Normal', dueDate: '2025-09-04', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN1001', OperationSeq: 1, OperationName: 'Simple', SetupTime_Min: 30, CycleTime_Min: 5, EligibleMachines: ['VMC 1', 'VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN1002', OperationSeq: 1, OperationName: 'Turning', SetupTime_Min: 45, CycleTime_Min: 8, EligibleMachines: ['VMC 1', 'VMC 3'], Operator: 1 },
+                    { PartNumber: 'PN1003', OperationSeq: 1, OperationName: 'Milling', SetupTime_Min: 60, CycleTime_Min: 10, EligibleMachines: ['VMC 2', 'VMC 3'], Operator: 1 }
+                ]
+            },
+            medium: {
+                orders: [
+                    { partNumber: 'PN2001', quantity: 300, priority: 'High', dueDate: '2025-09-03', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN2002', quantity: 500, priority: 'Normal', dueDate: '2025-09-04', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN2003', quantity: 600, priority: 'Urgent', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN2001', OperationSeq: 1, OperationName: 'Roughing', SetupTime_Min: 60, CycleTime_Min: 8, EligibleMachines: ['VMC 1', 'VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN2001', OperationSeq: 2, OperationName: 'Finishing', SetupTime_Min: 45, CycleTime_Min: 5, EligibleMachines: ['VMC 3', 'VMC 4'], Operator: 1 },
+                    { PartNumber: 'PN2002', OperationSeq: 1, OperationName: 'Turning', SetupTime_Min: 70, CycleTime_Min: 12, EligibleMachines: ['VMC 1', 'VMC 3'], Operator: 1 },
+                    { PartNumber: 'PN2002', OperationSeq: 2, OperationName: 'Milling', SetupTime_Min: 50, CycleTime_Min: 8, EligibleMachines: ['VMC 2', 'VMC 4'], Operator: 1 },
+                    { PartNumber: 'PN2003', OperationSeq: 1, OperationName: 'Facing', SetupTime_Min: 80, CycleTime_Min: 15, EligibleMachines: ['VMC 1', 'VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN2003', OperationSeq: 2, OperationName: 'Threading', SetupTime_Min: 60, CycleTime_Min: 10, EligibleMachines: ['VMC 3', 'VMC 4'], Operator: 1 }
+                ]
+            },
+            large: {
+                orders: [
+                    { partNumber: 'PN3001', quantity: 800, priority: 'Normal', dueDate: '2025-09-05', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN3002', quantity: 1000, priority: 'High', dueDate: '2025-09-04', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN3003', quantity: 1500, priority: 'Urgent', dueDate: '2025-09-03', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN3001', OperationSeq: 1, OperationName: 'Roughing', SetupTime_Min: 90, CycleTime_Min: 12, EligibleMachines: ['VMC 1', 'VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN3001', OperationSeq: 2, OperationName: 'Semi-Finishing', SetupTime_Min: 70, CycleTime_Min: 8, EligibleMachines: ['VMC 3', 'VMC 4'], Operator: 1 },
+                    { PartNumber: 'PN3001', OperationSeq: 3, OperationName: 'Finishing', SetupTime_Min: 60, CycleTime_Min: 6, EligibleMachines: ['VMC 5', 'VMC 6'], Operator: 1 },
+                    { PartNumber: 'PN3002', OperationSeq: 1, OperationName: 'Turning', SetupTime_Min: 100, CycleTime_Min: 15, EligibleMachines: ['VMC 1', 'VMC 3'], Operator: 1 },
+                    { PartNumber: 'PN3002', OperationSeq: 2, OperationName: 'Milling', SetupTime_Min: 80, CycleTime_Min: 10, EligibleMachines: ['VMC 2', 'VMC 4'], Operator: 1 },
+                    { PartNumber: 'PN3003', OperationSeq: 1, OperationName: 'Facing', SetupTime_Min: 120, CycleTime_Min: 18, EligibleMachines: ['VMC 1', 'VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN3003', OperationSeq: 2, OperationName: 'Boring', SetupTime_Min: 90, CycleTime_Min: 12, EligibleMachines: ['VMC 3', 'VMC 4'], Operator: 1 },
+                    { PartNumber: 'PN3003', OperationSeq: 3, OperationName: 'Threading', SetupTime_Min: 70, CycleTime_Min: 8, EligibleMachines: ['VMC 5', 'VMC 6'], Operator: 1 }
+                ]
+            },
+            mixed: {
+                orders: [
+                    { partNumber: 'PN4001', quantity: 400, priority: 'Urgent', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN4002', quantity: 600, priority: 'High', dueDate: '2025-09-03', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN4003', quantity: 800, priority: 'Normal', dueDate: '2025-09-05', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN4004', quantity: 1000, priority: 'Low', dueDate: '2025-09-07', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN4001', OperationSeq: 1, OperationName: 'Urgent Op1', SetupTime_Min: 60, CycleTime_Min: 8, EligibleMachines: ['VMC 1', 'VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN4001', OperationSeq: 2, OperationName: 'Urgent Op2', SetupTime_Min: 45, CycleTime_Min: 5, EligibleMachines: ['VMC 3', 'VMC 4'], Operator: 1 },
+                    { PartNumber: 'PN4002', OperationSeq: 1, OperationName: 'High Op1', SetupTime_Min: 70, CycleTime_Min: 10, EligibleMachines: ['VMC 1', 'VMC 3'], Operator: 1 },
+                    { PartNumber: 'PN4002', OperationSeq: 2, OperationName: 'High Op2', SetupTime_Min: 50, CycleTime_Min: 7, EligibleMachines: ['VMC 2', 'VMC 4'], Operator: 1 },
+                    { PartNumber: 'PN4003', OperationSeq: 1, OperationName: 'Normal Op1', SetupTime_Min: 80, CycleTime_Min: 12, EligibleMachines: ['VMC 1', 'VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN4003', OperationSeq: 2, OperationName: 'Normal Op2', SetupTime_Min: 60, CycleTime_Min: 8, EligibleMachines: ['VMC 3', 'VMC 4'], Operator: 1 },
+                    { PartNumber: 'PN4004', OperationSeq: 1, OperationName: 'Low Op1', SetupTime_Min: 100, CycleTime_Min: 15, EligibleMachines: ['VMC 1', 'VMC 2', 'VMC 3', 'VMC 4'], Operator: 1 }
+                ]
+            },
+            stress: {
+                orders: [
+                    { partNumber: 'PN5001', quantity: 2000, priority: 'Urgent', dueDate: '2025-09-03', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN5002', quantity: 3000, priority: 'High', dueDate: '2025-09-04', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN5001', OperationSeq: 1, OperationName: 'Stress Op1', SetupTime_Min: 120, CycleTime_Min: 20, EligibleMachines: ['VMC 1', 'VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN5001', OperationSeq: 2, OperationName: 'Stress Op2', SetupTime_Min: 90, CycleTime_Min: 15, EligibleMachines: ['VMC 3', 'VMC 4'], Operator: 1 },
+                    { PartNumber: 'PN5001', OperationSeq: 3, OperationName: 'Stress Op3', SetupTime_Min: 70, CycleTime_Min: 10, EligibleMachines: ['VMC 5', 'VMC 6'], Operator: 1 },
+                    { PartNumber: 'PN5002', OperationSeq: 1, OperationName: 'Mega Op1', SetupTime_Min: 150, CycleTime_Min: 25, EligibleMachines: ['VMC 1', 'VMC 3'], Operator: 1 },
+                    { PartNumber: 'PN5002', OperationSeq: 2, OperationName: 'Mega Op2', SetupTime_Min: 120, CycleTime_Min: 18, EligibleMachines: ['VMC 2', 'VMC 4'], Operator: 1 },
+                    { PartNumber: 'PN5002', OperationSeq: 3, OperationName: 'Mega Op3', SetupTime_Min: 100, CycleTime_Min: 12, EligibleMachines: ['VMC 5', 'VMC 6'], Operator: 1 },
+                    { PartNumber: 'PN5002', OperationSeq: 4, OperationName: 'Mega Op4', SetupTime_Min: 80, CycleTime_Min: 8, EligibleMachines: ['VMC 7'], Operator: 1 }
+                ]
+            }
+        };
+
+        function runTest(testType) {
+            if (testType === 'all') {
+                runAllTests();
+                return;
+            }
+
+            const config = testConfigs[testType];
+            if (!config) {
+                console.error('Unknown test type:', testType);
+                return;
+            }
+
+            console.log(`🧪 Running ${testType} test...`);
+            testStartTime = performance.now();
+            
+            try {
+                const result = runSchedulingInBrowser(config.orders, config.operations);
+                
+                if (result.success) {
+                    currentTestResults = result;
+                    const processingTime = Math.round(performance.now() - testStartTime);
+                    
+                    console.log(`✅ ${testType} test completed in ${processingTime}ms`);
+                    displayResults(result.outputData.mainOutput, processingTime);
+                    updatePerformanceMetrics(result.outputData.mainOutput, processingTime);
+                    analyzeRunEnds(result.outputData.mainOutput);
+                    analyzeDetails(result.outputData.mainOutput);
+                } else {
+                    console.log(`❌ ${testType} test failed`);
+                    document.getElementById('loadingResults').innerHTML = '❌ Test failed';
+                }
+            } catch (error) {
+                console.error('❌ Error:', error);
+                document.getElementById('loadingResults').innerHTML = '❌ Error: ' + error.message;
+            }
+        }
+
+        function runAllTests() {
+            console.log('🧪 Running all tests...');
+            const testTypes = ['small', 'medium', 'large', 'mixed', 'stress'];
+            let allResults = [];
+            let totalProcessingTime = 0;
+
+            testTypes.forEach((testType, index) => {
+                setTimeout(() => {
+                    const config = testConfigs[testType];
+                    const startTime = performance.now();
+                    
+                    try {
+                        const result = runSchedulingInBrowser(config.orders, config.operations);
+                        const processingTime = Math.round(performance.now() - startTime);
+                        totalProcessingTime += processingTime;
+                        
+                        if (result.success) {
+                            allResults = allResults.concat(result.outputData.mainOutput);
+                            console.log(`✅ ${testType} test completed in ${processingTime}ms`);
+                        }
+                    } catch (error) {
+                        console.error(`❌ ${testType} test error:`, error);
+                    }
+                    
+                    if (index === testTypes.length - 1) {
+                        // All tests completed
+                        currentTestResults = { success: true, outputData: { mainOutput: allResults } };
+                        displayResults(allResults, totalProcessingTime);
+                        updatePerformanceMetrics(allResults, totalProcessingTime);
+                        analyzeRunEnds(allResults);
+                        analyzeDetails(allResults);
+                    }
+                }, index * 1000); // Stagger tests by 1 second
+            });
+        }
+
+        function displayResults(results, processingTime) {
+            // Hide loading and show table
+            document.getElementById('loadingResults').style.display = 'none';
+            document.getElementById('resultsTable').style.display = 'table';
+            
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+            
+            results.forEach(row => {
+                const [partNumber, orderQty, priority, batchId, batchQty, opSeq, opName, machine, person, setupStart, setupEnd, runStart, runEnd, timing, dueDate] = row;
+                
+                const tr = document.createElement('tr');
+                
+                // Check if due date is met
+                const runEndDate = new Date(runEnd);
+                const dueDateObj = new Date(dueDate);
+                const isOnTime = runEndDate <= dueDateObj;
+                const statusClass = isOnTime ? 'status-success' : 'status-warning';
+                const statusText = isOnTime ? '✅' : '⚠️';
+                
+                // Add priority-based row styling
+                const priorityClass = `priority-${priority.toLowerCase()}`;
+                tr.className = priorityClass;
+                
+                tr.innerHTML = `
+                    <td>${partNumber}</td>
+                    <td>${orderQty}</td>
+                    <td>${priority}</td>
+                    <td>${batchId}</td>
+                    <td>${batchQty}</td>
+                    <td>${opSeq}</td>
+                    <td>${opName}</td>
+                    <td>${machine}</td>
+                    <td>${person}</td>
+                    <td>${setupStart}</td>
+                    <td>${setupEnd}</td>
+                    <td>${runStart}</td>
+                    <td>${runEnd}</td>
+                    <td>${timing}</td>
+                    <td>${dueDate}</td>
+                    <td class="${statusClass}">${statusText}</td>
+                `;
+                
+                tbody.appendChild(tr);
+            });
+        }
+
+        function updatePerformanceMetrics(results, processingTime) {
+            // Calculate metrics
+            const totalOperations = results.length;
+            const batches = new Set(results.map(row => row[3]));
+            const totalBatches = batches.size;
+            const totalQuantity = results.reduce((sum, row) => sum + row[4], 0);
+            const avgBatchSize = Math.round(totalQuantity / totalBatches);
+            const onTimeDeliveries = results.filter(row => {
+                const runEndDate = new Date(row[12]);
+                const dueDateObj = new Date(row[14]);
+                return runEndDate <= dueDateObj;
+            }).length;
+
+            // Update metric displays
+            document.getElementById('totalOperations').textContent = totalOperations;
+            document.getElementById('totalBatches').textContent = totalBatches;
+            document.getElementById('avgBatchSize').textContent = avgBatchSize;
+            document.getElementById('conflictsResolved').textContent = 'Auto';
+            document.getElementById('onTimeDeliveries').textContent = `${onTimeDeliveries}/${totalOperations}`;
+            document.getElementById('processingTime').textContent = `${processingTime}ms`;
+        }
+
+        function analyzeRunEnds(results) {
+            const analysisDiv = document.getElementById('runEndAnalysis');
+            analysisDiv.innerHTML = '';
+            
+            // Group by part number
+            const parts = {};
+            results.forEach(row => {
+                const partNumber = row[0];
+                if (!parts[partNumber]) {
+                    parts[partNumber] = [];
+                }
+                parts[partNumber].push(row);
+            });
+            
+            let analysisHtml = '';
+            Object.keys(parts).forEach(partNumber => {
+                const operations = parts[partNumber];
+                const orderQty = operations[0][1];
+                const priority = operations[0][2];
+                const dueDate = operations[0][14];
+                
+                // Find the last operation (latest run end)
+                const lastOperation = operations.reduce((latest, current) => {
+                    const currentRunEnd = new Date(current[12]);
+                    const latestRunEnd = new Date(latest[12]);
+                    return currentRunEnd > latestRunEnd ? current : latest;
+                });
+                
+                const finalRunEnd = lastOperation[12];
+                const runEndDate = new Date(finalRunEnd);
+                const dueDateObj = new Date(dueDate);
+                const isOnTime = runEndDate <= dueDateObj;
+                const daysDifference = Math.ceil((runEndDate - dueDateObj) / (1000 * 60 * 60 * 24));
+                
+                // Calculate total processing time
+                const firstOperation = operations.reduce((earliest, current) => {
+                    const currentSetupStart = new Date(current[9]);
+                    const earliestSetupStart = new Date(earliest[9]);
+                    return currentSetupStart < earliestSetupStart ? current : earliest;
+                });
+                
+                const totalTime = Math.round((runEndDate - new Date(firstOperation[9])) / (60 * 1000));
+                const totalHours = Math.floor(totalTime / 60);
+                const totalMinutes = totalTime % 60;
+                
+                analysisHtml += `
+                    <div class="run-end-analysis">
+                        <h4>${partNumber} (${orderQty} pieces, ${priority} priority)</h4>
+                        <div class="run-end-item">
+                            <strong>Final Run End:</strong> ${finalRunEnd}<br>
+                            <strong>Due Date:</strong> ${dueDate}<br>
+                            <strong>Status:</strong> ${isOnTime ? '✅ On Time' : `⚠️ ${daysDifference} days late`}<br>
+                            <strong>Total Processing Time:</strong> ${totalHours}H ${totalMinutes}M<br>
+                            <strong>Operations:</strong> ${operations.length} | <strong>Batches:</strong> ${new Set(operations.map(op => op[3])).size}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            analysisDiv.innerHTML = analysisHtml;
+        }
+
+        function analyzeDetails(results) {
+            const analysisDiv = document.getElementById('detailedAnalysis');
+            analysisDiv.innerHTML = '';
+            
+            // Machine utilization analysis
+            const machineUsage = {};
+            const operatorUsage = {};
+            
+            results.forEach(row => {
+                const machine = row[7];
+                const operator = row[8];
+                const setupStart = row[9];
+                const runEnd = row[12];
+                
+                if (!machineUsage[machine]) {
+                    machineUsage[machine] = [];
+                }
+                machineUsage[machine].push({ setupStart, runEnd });
+                
+                if (!operatorUsage[operator]) {
+                    operatorUsage[operator] = [];
+                }
+                operatorUsage[operator].push({ setupStart, setupEnd: row[10] });
+            });
+            
+            let analysisHtml = '<h3>Machine Utilization:</h3>';
+            Object.keys(machineUsage).forEach(machine => {
+                const operations = machineUsage[machine];
+                analysisHtml += `<div class="run-end-item"><strong>${machine}:</strong> ${operations.length} operations</div>`;
+            });
+            
+            analysisHtml += '<h3>Operator Utilization:</h3>';
+            Object.keys(operatorUsage).forEach(operator => {
+                const operations = operatorUsage[operator];
+                analysisHtml += `<div class="run-end-item"><strong>Operator ${operator}:</strong> ${operations.length} setups</div>`;
+            });
+            
+            analysisDiv.innerHTML = analysisHtml;
+        }
+    </script>
+</body>
+</html>

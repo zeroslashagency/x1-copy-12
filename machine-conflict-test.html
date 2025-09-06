@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Machine Conflict Prevention Test Suite</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border: 1px solid #e1e8ed;
+        }
+
+        .card h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            border-bottom: 2px solid #e74c3c;
+            padding-bottom: 10px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #27ae60, #229954);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+        }
+
+        .test-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-size: 12px;
+        }
+
+        .results-table th {
+            background: linear-gradient(135deg, #34495e, #2c3e50);
+            color: white;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 11px;
+        }
+
+        .results-table td {
+            padding: 8px 6px;
+            border-bottom: 1px solid #ecf0f1;
+            font-size: 11px;
+        }
+
+        .results-table tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .results-table tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        .status-success {
+            color: #27ae60;
+            font-weight: bold;
+        }
+
+        .status-warning {
+            color: #f39c12;
+            font-weight: bold;
+        }
+
+        .status-danger {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+
+        .conflict-analysis {
+            background: #ffebee;
+            border: 1px solid #e74c3c;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .conflict-analysis h4 {
+            color: #c62828;
+            margin-bottom: 10px;
+        }
+
+        .conflict-item {
+            background: white;
+            border: 1px solid #ffcdd2;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .validation-summary {
+            background: #e8f5e8;
+            border: 1px solid #c3e6cb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .validation-summary h4 {
+            color: #155724;
+            margin-bottom: 10px;
+        }
+
+        .test-scenario {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .scenario-header {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .machine-timeline {
+            background: #fff3e0;
+            border: 1px solid #ffcc02;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .machine-timeline h4 {
+            color: #e65100;
+            margin-bottom: 10px;
+        }
+
+        .timeline-item {
+            background: white;
+            border: 1px solid #ffe0b2;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔒 Machine Conflict Prevention Test Suite</h1>
+            <p>Comprehensive Testing: Strict Machine Locking, Priority Queueing, and Conflict Resolution</p>
+        </div>
+
+        <div class="card">
+            <h2>🎯 Machine Conflict Test Scenarios</h2>
+            <div class="test-controls">
+                <button class="btn" onclick="runTest('basic-conflict')">Basic Machine Conflict</button>
+                <button class="btn" onclick="runTest('priority-queueing')">Priority Queueing Test</button>
+                <button class="btn" onclick="runTest('sequence-violation')">Sequence Violation Test</button>
+                <button class="btn" onclick="runTest('stress-test')">Stress Test (Multiple Conflicts)</button>
+                <button class="btn" onclick="runTest('all')">Run All Conflict Tests</button>
+            </div>
+            
+            <div class="test-scenario">
+                <div class="scenario-header">📋 Test Categories</div>
+                <div><strong>Basic Machine Conflict:</strong> Two batches competing for same machine</div>
+                <div><strong>Priority Queueing:</strong> Multiple priorities competing for resources</div>
+                <div><strong>Sequence Violation:</strong> Operations starting before previous ones finish</div>
+                <div><strong>Stress Test:</strong> Multiple conflicts across multiple machines</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🔍 Conflict Analysis</h2>
+            <div id="conflictAnalysis">
+                <div class="loading">Run a test to see conflict analysis...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Machine Timeline Analysis</h2>
+            <div id="machineTimeline">
+                <div class="loading">Run a test to see machine timeline analysis...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>✅ Validation Summary</h2>
+            <div id="validationSummary">
+                <div class="loading">Run a test to see validation summary...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Test Results</h2>
+            <div id="loadingResults" class="loading">
+                Select a test scenario to run...
+            </div>
+            <table class="results-table" id="resultsTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Part</th>
+                        <th>Qty</th>
+                        <th>Priority</th>
+                        <th>Batch</th>
+                        <th>Batch Qty</th>
+                        <th>Op</th>
+                        <th>Operation</th>
+                        <th>Machine</th>
+                        <th>Person</th>
+                        <th>Setup Start</th>
+                        <th>Setup End</th>
+                        <th>Run Start</th>
+                        <th>Run End</th>
+                        <th>Timing</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Load the corrected scheduling engine -->
+    <script src="x10-browser-corrected.js?v=2.0"></script>
+    
+    <script>
+        let currentTestResults = null;
+
+        // Test data configurations for machine conflict testing
+        const conflictTestConfigs = {
+            'basic-conflict': {
+                orders: [
+                    { partNumber: 'PN1001', quantity: 200, priority: 'Normal', dueDate: '2025-09-03', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN1002', quantity: 300, priority: 'High', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN1001', OperationSeq: 1, OperationName: 'Facing', SetupTime_Min: 60, CycleTime_Min: 8, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PN1002', OperationSeq: 1, OperationName: 'Turning', SetupTime_Min: 70, CycleTime_Min: 10, EligibleMachines: ['VMC 1'], Operator: 1 }
+                ],
+                description: 'Two batches competing for VMC 1 - should queue properly'
+            },
+            'priority-queueing': {
+                orders: [
+                    { partNumber: 'PN2001', quantity: 400, priority: 'Urgent', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN2002', quantity: 500, priority: 'High', dueDate: '2025-09-03', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN2003', quantity: 600, priority: 'Normal', dueDate: '2025-09-04', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN2004', quantity: 700, priority: 'Low', dueDate: '2025-09-05', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN2001', OperationSeq: 1, OperationName: 'Urgent Op', SetupTime_Min: 80, CycleTime_Min: 12, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PN2002', OperationSeq: 1, OperationName: 'High Op', SetupTime_Min: 90, CycleTime_Min: 15, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PN2003', OperationSeq: 1, OperationName: 'Normal Op', SetupTime_Min: 100, CycleTime_Min: 18, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PN2004', OperationSeq: 1, OperationName: 'Low Op', SetupTime_Min: 110, CycleTime_Min: 20, EligibleMachines: ['VMC 1'], Operator: 1 }
+                ],
+                description: 'Four batches with different priorities competing for VMC 1 - should queue by priority'
+            },
+            'sequence-violation': {
+                orders: [
+                    { partNumber: 'PN3001', quantity: 500, priority: 'High', dueDate: '2025-09-03', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN3001', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 60, CycleTime_Min: 10, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PN3001', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 50, CycleTime_Min: 8, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN3001', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 40, CycleTime_Min: 6, EligibleMachines: ['VMC 1'], Operator: 1 }
+                ],
+                description: 'Same batch with operations that should wait for previous operations to complete'
+            },
+            'stress-test': {
+                orders: [
+                    { partNumber: 'PN4001', quantity: 800, priority: 'Urgent', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN4002', quantity: 1000, priority: 'High', dueDate: '2025-09-03', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN4003', quantity: 1200, priority: 'Normal', dueDate: '2025-09-04', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN4001', OperationSeq: 1, OperationName: 'Stress Op1', SetupTime_Min: 120, CycleTime_Min: 20, EligibleMachines: ['VMC 1', 'VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN4001', OperationSeq: 2, OperationName: 'Stress Op2', SetupTime_Min: 100, CycleTime_Min: 15, EligibleMachines: ['VMC 1', 'VMC 3'], Operator: 1 },
+                    { PartNumber: 'PN4002', OperationSeq: 1, OperationName: 'High Op1', SetupTime_Min: 140, CycleTime_Min: 25, EligibleMachines: ['VMC 1', 'VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN4002', OperationSeq: 2, OperationName: 'High Op2', SetupTime_Min: 110, CycleTime_Min: 18, EligibleMachines: ['VMC 2', 'VMC 3'], Operator: 1 },
+                    { PartNumber: 'PN4003', OperationSeq: 1, OperationName: 'Normal Op1', SetupTime_Min: 160, CycleTime_Min: 30, EligibleMachines: ['VMC 1', 'VMC 2', 'VMC 3'], Operator: 1 }
+                ],
+                description: 'Multiple batches with complex operations competing for limited machines'
+            }
+        };
+
+        function runTest(testType) {
+            if (testType === 'all') {
+                runAllConflictTests();
+                return;
+            }
+
+            const config = conflictTestConfigs[testType];
+            if (!config) {
+                console.error('Unknown test type:', testType);
+                return;
+            }
+
+            console.log(`🔒 Running ${testType} test: ${config.description}`);
+            
+            try {
+                const result = runSchedulingInBrowser(config.orders, config.operations);
+                
+                if (result.success) {
+                    currentTestResults = result;
+                    console.log(`✅ ${testType} test completed`);
+                    displayResults(result.outputData.mainOutput);
+                    analyzeConflicts(result.outputData.mainOutput, result.validation);
+                    analyzeMachineTimelines(result.outputData.mainOutput);
+                    displayValidationSummary(result.validation);
+                } else {
+                    console.log(`❌ ${testType} test failed`);
+                    document.getElementById('loadingResults').innerHTML = '❌ Test failed';
+                }
+            } catch (error) {
+                console.error('❌ Error:', error);
+                document.getElementById('loadingResults').innerHTML = '❌ Error: ' + error.message;
+            }
+        }
+
+        function runAllConflictTests() {
+            console.log('🔒 Running all conflict tests...');
+            const testTypes = ['basic-conflict', 'priority-queueing', 'sequence-violation', 'stress-test'];
+            let allResults = [];
+            let allValidations = [];
+
+            testTypes.forEach((testType, index) => {
+                setTimeout(() => {
+                    const config = conflictTestConfigs[testType];
+                    
+                    try {
+                        const result = runSchedulingInBrowser(config.orders, config.operations);
+                        
+                        if (result.success) {
+                            allResults = allResults.concat(result.outputData.mainOutput);
+                            allValidations.push(result.validation);
+                            console.log(`✅ ${testType} test completed`);
+                        }
+                    } catch (error) {
+                        console.error(`❌ ${testType} test error:`, error);
+                    }
+                    
+                    if (index === testTypes.length - 1) {
+                        // All tests completed
+                        currentTestResults = { success: true, outputData: { mainOutput: allResults }, validation: allValidations };
+                        displayResults(allResults);
+                        analyzeConflicts(allResults, allValidations);
+                        analyzeMachineTimelines(allResults);
+                        displayValidationSummary(allValidations);
+                    }
+                }, index * 1000); // Stagger tests by 1 second
+            });
+        }
+
+        function displayResults(results) {
+            // Hide loading and show table
+            document.getElementById('loadingResults').style.display = 'none';
+            document.getElementById('resultsTable').style.display = 'table';
+            
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+            
+            results.forEach(row => {
+                const [partNumber, orderQty, priority, batchId, batchQty, opSeq, opName, machine, person, setupStart, setupEnd, runStart, runEnd, timing, dueDate] = row;
+                
+                const tr = document.createElement('tr');
+                
+                // Check if due date is met
+                const runEndDate = new Date(runEnd);
+                const dueDateObj = new Date(dueDate);
+                const isOnTime = runEndDate <= dueDateObj;
+                const statusClass = isOnTime ? 'status-success' : 'status-warning';
+                const statusText = isOnTime ? '✅' : '⚠️';
+                
+                tr.innerHTML = `
+                    <td>${partNumber}</td>
+                    <td>${orderQty}</td>
+                    <td>${priority}</td>
+                    <td>${batchId}</td>
+                    <td>${batchQty}</td>
+                    <td>${opSeq}</td>
+                    <td>${opName}</td>
+                    <td>${machine}</td>
+                    <td>${person}</td>
+                    <td>${setupStart}</td>
+                    <td>${setupEnd}</td>
+                    <td>${runStart}</td>
+                    <td>${runEnd}</td>
+                    <td>${timing}</td>
+                    <td>${dueDate}</td>
+                    <td class="${statusClass}">${statusText}</td>
+                `;
+                
+                tbody.appendChild(tr);
+            });
+        }
+
+        function analyzeConflicts(results, validations) {
+            const analysisDiv = document.getElementById('conflictAnalysis');
+            analysisDiv.innerHTML = '';
+            
+            let analysisHtml = '';
+            
+            // Analyze machine conflicts
+            const machineUsage = {};
+            results.forEach(row => {
+                const machine = row[7];
+                const batchId = row[3];
+                const opSeq = row[5];
+                const setupStart = row[9];
+                const runEnd = row[12];
+                
+                if (!machineUsage[machine]) {
+                    machineUsage[machine] = [];
+                }
+                machineUsage[machine].push({ batchId, opSeq, setupStart, runEnd });
+            });
+            
+            // Check for overlaps
+            Object.keys(machineUsage).forEach(machine => {
+                const operations = machineUsage[machine];
+                operations.sort((a, b) => new Date(a.setupStart) - new Date(b.setupStart));
+                
+                let hasOverlaps = false;
+                for (let i = 0; i < operations.length - 1; i++) {
+                    const current = operations[i];
+                    const next = operations[i + 1];
+                    
+                    const currentEnd = new Date(current.runEnd);
+                    const nextStart = new Date(next.setupStart);
+                    
+                    if (nextStart < currentEnd) {
+                        hasOverlaps = true;
+                        analysisHtml += `
+                            <div class="conflict-item">
+                                <strong>❌ MACHINE CONFLICT:</strong> ${machine}<br>
+                                ${current.batchId} Op${current.opSeq} ends at ${current.runEnd}<br>
+                                ${next.batchId} Op${next.opSeq} starts at ${next.setupStart}<br>
+                                <span style="color: #e74c3c;">OVERLAP DETECTED!</span>
+                            </div>
+                        `;
+                    }
+                }
+                
+                if (!hasOverlaps) {
+                    analysisHtml += `
+                        <div class="conflict-item">
+                            <strong>✅ NO CONFLICTS:</strong> ${machine}<br>
+                            ${operations.length} operations scheduled sequentially without overlaps
+                        </div>
+                    `;
+                }
+            });
+            
+            analysisDiv.innerHTML = analysisHtml || '<div class="conflict-item">No conflicts detected</div>';
+        }
+
+        function analyzeMachineTimelines(results) {
+            const timelineDiv = document.getElementById('machineTimeline');
+            timelineDiv.innerHTML = '';
+            
+            // Group by machine
+            const machineTimelines = {};
+            results.forEach(row => {
+                const machine = row[7];
+                const batchId = row[3];
+                const opSeq = row[5];
+                const setupStart = row[9];
+                const setupEnd = row[10];
+                const runStart = row[11];
+                const runEnd = row[12];
+                
+                if (!machineTimelines[machine]) {
+                    machineTimelines[machine] = [];
+                }
+                machineTimelines[machine].push({ batchId, opSeq, setupStart, setupEnd, runStart, runEnd });
+            });
+            
+            let timelineHtml = '';
+            Object.keys(machineTimelines).forEach(machine => {
+                const operations = machineTimelines[machine].sort((a, b) => new Date(a.setupStart) - new Date(b.setupStart));
+                
+                timelineHtml += `
+                    <div class="machine-timeline">
+                        <h4>${machine} Timeline</h4>
+                `;
+                
+                operations.forEach(op => {
+                    timelineHtml += `
+                        <div class="timeline-item">
+                            <strong>${op.batchId} Op${op.opSeq}:</strong><br>
+                            Setup: ${op.setupStart} → ${op.setupEnd}<br>
+                            Run: ${op.runStart} → ${op.runEnd}
+                        </div>
+                    `;
+                });
+                
+                timelineHtml += '</div>';
+            });
+            
+            timelineDiv.innerHTML = timelineHtml;
+        }
+
+        function displayValidationSummary(validations) {
+            const summaryDiv = document.getElementById('validationSummary');
+            summaryDiv.innerHTML = '';
+            
+            let summaryHtml = '';
+            
+            if (Array.isArray(validations)) {
+                // Multiple validations from all tests
+                const totalConflicts = validations.reduce((sum, v) => sum + (v.summary?.totalConflicts || 0), 0);
+                const totalWarnings = validations.reduce((sum, v) => sum + (v.summary?.warnings || 0), 0);
+                const totalCritical = validations.reduce((sum, v) => sum + (v.summary?.criticalConflicts || 0), 0);
+                
+                summaryHtml = `
+                    <div class="validation-summary">
+                        <h4>Overall Validation Results</h4>
+                        <div class="timeline-item">
+                            <strong>Total Conflicts:</strong> ${totalConflicts}<br>
+                            <strong>Critical Conflicts:</strong> ${totalCritical}<br>
+                            <strong>Warnings:</strong> ${totalWarnings}<br>
+                            <strong>Tests Run:</strong> ${validations.length}
+                        </div>
+                    </div>
+                `;
+            } else if (validations) {
+                // Single validation
+                summaryHtml = `
+                    <div class="validation-summary">
+                        <h4>Validation Results</h4>
+                        <div class="timeline-item">
+                            <strong>Valid Schedule:</strong> ${validations.valid ? '✅ YES' : '❌ NO'}<br>
+                            <strong>Total Conflicts:</strong> ${validations.summary?.totalConflicts || 0}<br>
+                            <strong>Critical Conflicts:</strong> ${validations.summary?.criticalConflicts || 0}<br>
+                            <strong>Warnings:</strong> ${validations.summary?.warnings || 0}<br>
+                            <strong>Machines Checked:</strong> ${validations.summary?.machinesChecked || 0}<br>
+                            <strong>Operators Checked:</strong> ${validations.summary?.operatorsChecked || 0}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            summaryDiv.innerHTML = summaryHtml || '<div class="timeline-item">No validation data available</div>';
+        }
+    </script>
+</body>
+</html>

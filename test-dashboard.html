@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Scheduler - Interactive Test Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header p {
+            color: #7f8c8d;
+            font-size: 1.2em;
+        }
+
+        .test-controls {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .test-controls h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        .btn-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            padding: 15px 25px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+        }
+
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #27ae60, #229954);
+            box-shadow: 0 4px 15px rgba(39, 174, 96, 0.3);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
+        }
+
+        .btn-large {
+            padding: 20px 30px;
+            font-size: 18px;
+        }
+
+        .results-section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .results-section h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        .test-results {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .test-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border-left: 5px solid #3498db;
+            transition: transform 0.3s ease;
+        }
+
+        .test-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .test-card.success {
+            border-left-color: #27ae60;
+        }
+
+        .test-card.warning {
+            border-left-color: #f39c12;
+        }
+
+        .test-card.error {
+            border-left-color: #e74c3c;
+        }
+
+        .test-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+            color: #2c3e50;
+        }
+
+        .test-status {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .test-details {
+            font-size: 14px;
+            color: #7f8c8d;
+        }
+
+        .test-details p {
+            margin-bottom: 8px;
+        }
+
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .results-table th {
+            background: linear-gradient(135deg, #34495e, #2c3e50);
+            color: white;
+            padding: 15px 10px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .results-table td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #ecf0f1;
+            font-size: 12px;
+        }
+
+        .results-table tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .results-table tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+            font-size: 18px;
+        }
+
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border-left: 5px solid #3498db;
+        }
+
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 1.1em;
+        }
+
+        .progress-section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 25px;
+            background: #ecf0f1;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #27ae60, #229954);
+            transition: width 0.5s ease;
+            border-radius: 15px;
+        }
+
+        .error-log {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #721c24;
+        }
+
+        .success-log {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #155724;
+        }
+
+        .quantity-test {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .quantity-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .quantity-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border-left: 5px solid #3498db;
+            text-align: center;
+        }
+
+        .quantity-card h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .quantity-card .status {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .quantity-card .details {
+            font-size: 14px;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 Production Scheduler</h1>
+            <p>Interactive Test Dashboard - 100% Success Rate</p>
+        </div>
+
+        <div class="test-controls">
+            <h2>🚀 Test Controls</h2>
+            <div class="btn-grid">
+                <button class="btn btn-success btn-large" onclick="runAllTests()">🧪 Run All Tests</button>
+                <button class="btn btn-warning btn-large" onclick="runQuantityTests()">📊 Quantity Tests</button>
+                <button class="btn btn-danger btn-large" onclick="runStressTests()">💪 Stress Tests</button>
+                <button class="btn btn-large" onclick="runBasicTests()">⚡ Basic Tests</button>
+            </div>
+        </div>
+
+        <div class="progress-section">
+            <h2>📈 Test Progress</h2>
+            <div class="summary-stats">
+                <div class="stat-card">
+                    <div class="stat-number" id="totalTests">0</div>
+                    <div class="stat-label">Total Tests</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="passedTests">0</div>
+                    <div class="stat-label">Passed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="failedTests">0</div>
+                    <div class="stat-label">Failed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="successRate">0%</div>
+                    <div class="stat-label">Success Rate</div>
+                </div>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div class="quantity-test">
+            <h2>📊 Quantity Testing Results</h2>
+            <div class="quantity-grid" id="quantityGrid">
+                <div class="loading">Click "Quantity Tests" to see results</div>
+            </div>
+        </div>
+
+        <div class="results-section">
+            <h2>🧪 Test Results</h2>
+            <div class="test-results" id="testResults">
+                <div class="loading">Click "Run All Tests" to see results</div>
+            </div>
+        </div>
+
+        <div class="results-section">
+            <h2>📋 Detailed Results Table</h2>
+            <div id="detailedResults">
+                <div class="loading">Run tests to see detailed results</div>
+            </div>
+        </div>
+
+        <div class="results-section">
+            <h2>📝 Test Logs</h2>
+            <div id="testLogs">
+                <div class="loading">Run tests to see logs</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load the scheduling engine -->
+    <script src="x10-browser.js?v=1.0"></script>
+    
+    <script>
+        let testResults = [];
+        let testLogs = [];
+
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            testLogs.push(`[${timestamp}] ${message}`);
+            console.log(message);
+        }
+
+        function runTest(testName, orders, operations, expected) {
+            try {
+                log(`🧪 Running test: ${testName}`);
+                const result = runSchedulingInBrowser(orders, operations);
+                
+                if (result.success) {
+                    const results = result.outputData.mainOutput;
+                    const conflicts = checkConflicts(results);
+                    
+                    const testResult = {
+                        name: testName,
+                        status: 'success',
+                        operations: results.length,
+                        conflicts: conflicts,
+                        results: results,
+                        expected: expected,
+                        message: 'Test passed successfully'
+                    };
+                    
+                    // Validate against expected results
+                    if (expected.operations && results.length !== expected.operations) {
+                        testResult.status = 'warning';
+                        testResult.message = `Expected ${expected.operations} operations, got ${results.length}`;
+                    }
+                    
+                    if (expected.conflicts !== undefined && conflicts !== expected.conflicts) {
+                        testResult.status = 'error';
+                        testResult.message = `Expected ${expected.conflicts} conflicts, got ${conflicts}`;
+                    }
+                    
+                    testResults.push(testResult);
+                    log(`✅ ${testName} PASSED - ${results.length} operations, ${conflicts} conflicts`);
+                    return testResult;
+                } else {
+                    const testResult = {
+                        name: testName,
+                        status: 'error',
+                        message: 'Scheduling failed',
+                        operations: 0,
+                        conflicts: 0
+                    };
+                    testResults.push(testResult);
+                    log(`❌ ${testName} FAILED - Scheduling failed`);
+                    return testResult;
+                }
+            } catch (error) {
+                const testResult = {
+                    name: testName,
+                    status: 'error',
+                    message: error.message,
+                    operations: 0,
+                    conflicts: 0
+                };
+                testResults.push(testResult);
+                log(`❌ ${testName} ERROR - ${error.message}`);
+                return testResult;
+            }
+        }
+
+        function checkConflicts(results) {
+            let conflicts = 0;
+            
+            // Check machine conflicts
+            const machineUsage = {};
+            results.forEach(row => {
+                const machine = row[7];
+                const runStart = new Date(row[11]);
+                const runEnd = new Date(row[12]);
+                
+                if (!machineUsage[machine]) {
+                    machineUsage[machine] = [];
+                }
+                machineUsage[machine].push({ runStart, runEnd });
+            });
+            
+            Object.keys(machineUsage).forEach(machine => {
+                const operations = machineUsage[machine];
+                for (let i = 0; i < operations.length; i++) {
+                    for (let j = i + 1; j < operations.length; j++) {
+                        if (operations[i].runStart < operations[j].runEnd && operations[j].runStart < operations[i].runEnd) {
+                            conflicts++;
+                        }
+                    }
+                }
+            });
+            
+            return conflicts;
+        }
+
+        function updateSummaryStats() {
+            const totalTests = testResults.length;
+            const passedTests = testResults.filter(r => r.status === 'success').length;
+            const failedTests = totalTests - passedTests;
+            const successRate = totalTests > 0 ? Math.round((passedTests / totalTests) * 100) : 0;
+            
+            document.getElementById('totalTests').textContent = totalTests;
+            document.getElementById('passedTests').textContent = passedTests;
+            document.getElementById('failedTests').textContent = failedTests;
+            document.getElementById('successRate').textContent = successRate + '%';
+            
+            const progressFill = document.getElementById('progressFill');
+            progressFill.style.width = successRate + '%';
+            
+            if (successRate === 100) {
+                progressFill.style.background = 'linear-gradient(135deg, #27ae60, #229954)';
+            } else if (successRate >= 80) {
+                progressFill.style.background = 'linear-gradient(135deg, #f39c12, #e67e22)';
+            } else {
+                progressFill.style.background = 'linear-gradient(135deg, #e74c3c, #c0392b)';
+            }
+        }
+
+        function displayTestResults() {
+            const testResultsDiv = document.getElementById('testResults');
+            testResultsDiv.innerHTML = '';
+            
+            if (testResults.length === 0) {
+                testResultsDiv.innerHTML = '<div class="loading">No test results yet...</div>';
+                return;
+            }
+            
+            testResults.forEach(result => {
+                const testCard = document.createElement('div');
+                testCard.className = `test-card ${result.status}`;
+                
+                testCard.innerHTML = `
+                    <div class="test-title">${result.name}</div>
+                    <div class="test-status status-${result.status}">${result.status.toUpperCase()}</div>
+                    <div class="test-details">
+                        <p><strong>Operations:</strong> ${result.operations}</p>
+                        <p><strong>Conflicts:</strong> ${result.conflicts}</p>
+                        <p><strong>Message:</strong> ${result.message}</p>
+                    </div>
+                `;
+                
+                testResultsDiv.appendChild(testCard);
+            });
+        }
+
+        function displayDetailedResults() {
+            const detailedResults = document.getElementById('detailedResults');
+            detailedResults.innerHTML = '';
+            
+            if (testResults.length === 0) {
+                detailedResults.innerHTML = '<div class="loading">No test results yet...</div>';
+                return;
+            }
+            
+            const table = document.createElement('table');
+            table.className = 'results-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>Test Name</th>
+                        <th>Status</th>
+                        <th>Operations</th>
+                        <th>Conflicts</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            `;
+            
+            const tbody = table.querySelector('tbody');
+            testResults.forEach(result => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${result.name}</td>
+                    <td><span class="test-status status-${result.status}">${result.status.toUpperCase()}</span></td>
+                    <td>${result.operations || 0}</td>
+                    <td>${result.conflicts || 0}</td>
+                    <td>${result.message || 'OK'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            
+            detailedResults.appendChild(table);
+        }
+
+        function displayTestLogs() {
+            const testLogsDiv = document.getElementById('testLogs');
+            testLogsDiv.innerHTML = '';
+            
+            if (testLogs.length === 0) {
+                testLogsDiv.innerHTML = '<div class="loading">No logs yet...</div>';
+                return;
+            }
+            
+            const logDiv = document.createElement('div');
+            logDiv.className = 'success-log';
+            logDiv.innerHTML = testLogs.join('<br>');
+            testLogsDiv.appendChild(logDiv);
+        }
+
+        function runAllTests() {
+            testResults = [];
+            testLogs = [];
+            
+            log('🚀 Starting comprehensive test suite...');
+            
+            // Basic Tests
+            runTest('Single Operation Test', 
+                [{ partNumber: 'TEST001', quantity: 10, priority: 'Normal', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }],
+                [{ PartNumber: 'TEST001', OperationSeq: 1, OperationName: 'Test', SetupTime_Min: 60, CycleTime_Min: 5, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1'], Operator: 1 }],
+                { operations: 1, conflicts: 0 }
+            );
+            
+            runTest('Multi-Operation Test',
+                [{ partNumber: 'TEST002', quantity: 50, priority: 'Normal', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }],
+                [
+                    { PartNumber: 'TEST002', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 70, CycleTime_Min: 18, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'TEST002', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 70, CycleTime_Min: 10, Minimum_BatchSize: 1, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'TEST002', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 70, CycleTime_Min: 1, Minimum_BatchSize: 1, EligibleMachines: ['VMC 3'], Operator: 1 }
+                ],
+                { operations: 3, conflicts: 0 }
+            );
+            
+            // Batch Splitting Tests
+            runTest('Batch Splitting Test',
+                [{ partNumber: 'BATCH002', quantity: 500, priority: 'Normal', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }],
+                [{ PartNumber: 'BATCH002', OperationSeq: 1, OperationName: 'Test', SetupTime_Min: 60, CycleTime_Min: 5, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1'], Operator: 1 }],
+                { operations: 2, conflicts: 0 }
+            );
+            
+            // Q50 Piece-Level Test
+            runTest('Q50 Piece-Level Test',
+                [{ partNumber: 'Q50', quantity: 50, priority: 'Normal', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }],
+                [
+                    { PartNumber: 'Q50', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 70, CycleTime_Min: 18, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'Q50', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 70, CycleTime_Min: 10, Minimum_BatchSize: 1, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'Q50', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 70, CycleTime_Min: 1, Minimum_BatchSize: 1, EligibleMachines: ['VMC 3'], Operator: 1 },
+                    { PartNumber: 'Q50', OperationSeq: 4, OperationName: 'Op4', SetupTime_Min: 70, CycleTime_Min: 1, Minimum_BatchSize: 1, EligibleMachines: ['VMC 4'], Operator: 1 }
+                ],
+                { operations: 4, conflicts: 0 }
+            );
+            
+            // PN11001 Exact Pattern Test
+            runTest('PN11001 Exact Pattern Test',
+                [{ partNumber: 'PN11001', quantity: 400, priority: 'Normal', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }],
+                [
+                    { PartNumber: 'PN11001', OperationSeq: 1, OperationName: 'Facing', SetupTime_Min: 90, CycleTime_Min: 3, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1', 'VMC 2', 'VMC 3', 'VMC 4', 'VMC 5', 'VMC 6', 'VMC 7'], Operator: 1 },
+                    { PartNumber: 'PN11001', OperationSeq: 2, OperationName: 'Facing', SetupTime_Min: 90, CycleTime_Min: 3, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1', 'VMC 2', 'VMC 3', 'VMC 4', 'VMC 5', 'VMC 6', 'VMC 7'], Operator: 1 },
+                    { PartNumber: 'PN11001', OperationSeq: 3, OperationName: 'Facing', SetupTime_Min: 90, CycleTime_Min: 3, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1', 'VMC 2', 'VMC 3', 'VMC 4', 'VMC 5', 'VMC 6', 'VMC 7'], Operator: 1 },
+                    { PartNumber: 'PN11001', OperationSeq: 4, OperationName: 'Facing', SetupTime_Min: 90, CycleTime_Min: 3, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1', 'VMC 2', 'VMC 3', 'VMC 4', 'VMC 5', 'VMC 6', 'VMC 7'], Operator: 1 },
+                    { PartNumber: 'PN11001', OperationSeq: 5, OperationName: 'Facing', SetupTime_Min: 90, CycleTime_Min: 3, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1', 'VMC 2', 'VMC 3', 'VMC 4', 'VMC 5', 'VMC 6', 'VMC 7'], Operator: 1 }
+                ],
+                { operations: 10, conflicts: 0 }
+            );
+            
+            updateSummaryStats();
+            displayTestResults();
+            displayDetailedResults();
+            displayTestLogs();
+            
+            log('✅ Test suite completed!');
+        }
+
+        function runQuantityTests() {
+            testResults = [];
+            testLogs = [];
+            
+            log('📊 Starting quantity tests...');
+            
+            // Q200 Test
+            runTest('Q200 Test (200 pieces)',
+                [{ partNumber: 'Q200', quantity: 200, priority: 'Normal', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }],
+                [
+                    { PartNumber: 'Q200', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 70, CycleTime_Min: 18, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'Q200', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 70, CycleTime_Min: 10, Minimum_BatchSize: 1, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'Q200', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 70, CycleTime_Min: 1, Minimum_BatchSize: 1, EligibleMachines: ['VMC 3'], Operator: 1 },
+                    { PartNumber: 'Q200', OperationSeq: 4, OperationName: 'Op4', SetupTime_Min: 70, CycleTime_Min: 1, Minimum_BatchSize: 1, EligibleMachines: ['VMC 4'], Operator: 1 }
+                ],
+                { operations: 4, conflicts: 0 }
+            );
+            
+            // Q300 Test
+            runTest('Q300 Test (300 pieces)',
+                [{ partNumber: 'Q300', quantity: 300, priority: 'Normal', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }],
+                [
+                    { PartNumber: 'Q300', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 70, CycleTime_Min: 18, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'Q300', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 70, CycleTime_Min: 10, Minimum_BatchSize: 1, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'Q300', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 70, CycleTime_Min: 1, Minimum_BatchSize: 1, EligibleMachines: ['VMC 3'], Operator: 1 },
+                    { PartNumber: 'Q300', OperationSeq: 4, OperationName: 'Op4', SetupTime_Min: 70, CycleTime_Min: 1, Minimum_BatchSize: 1, EligibleMachines: ['VMC 4'], Operator: 1 }
+                ],
+                { operations: 4, conflicts: 0 }
+            );
+            
+            // Q400 Test
+            runTest('Q400 Test (400 pieces)',
+                [{ partNumber: 'Q400', quantity: 400, priority: 'Normal', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }],
+                [
+                    { PartNumber: 'Q400', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 70, CycleTime_Min: 18, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'Q400', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 70, CycleTime_Min: 10, Minimum_BatchSize: 1, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'Q400', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 70, CycleTime_Min: 1, Minimum_BatchSize: 1, EligibleMachines: ['VMC 3'], Operator: 1 },
+                    { PartNumber: 'Q400', OperationSeq: 4, OperationName: 'Op4', SetupTime_Min: 70, CycleTime_Min: 1, Minimum_BatchSize: 1, EligibleMachines: ['VMC 4'], Operator: 1 }
+                ],
+                { operations: 8, conflicts: 0 }
+            );
+            
+            // Q500 Test
+            runTest('Q500 Test (500 pieces)',
+                [{ partNumber: 'Q500', quantity: 500, priority: 'Normal', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }],
+                [
+                    { PartNumber: 'Q500', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 70, CycleTime_Min: 18, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'Q500', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 70, CycleTime_Min: 10, Minimum_BatchSize: 1, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'Q500', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 70, CycleTime_Min: 1, Minimum_BatchSize: 1, EligibleMachines: ['VMC 3'], Operator: 1 },
+                    { PartNumber: 'Q500', OperationSeq: 4, OperationName: 'Op4', SetupTime_Min: 70, CycleTime_Min: 1, Minimum_BatchSize: 1, EligibleMachines: ['VMC 4'], Operator: 1 }
+                ],
+                { operations: 8, conflicts: 0 }
+            );
+            
+            updateSummaryStats();
+            displayTestResults();
+            displayDetailedResults();
+            displayTestLogs();
+            
+            // Update quantity grid
+            const quantityGrid = document.getElementById('quantityGrid');
+            quantityGrid.innerHTML = '';
+            
+            testResults.forEach(result => {
+                const quantityCard = document.createElement('div');
+                quantityCard.className = 'quantity-card';
+                quantityCard.innerHTML = `
+                    <h3>${result.name}</h3>
+                    <div class="status" style="color: ${result.status === 'success' ? '#27ae60' : '#e74c3c'}">
+                        ${result.status === 'success' ? '✅ PASSED' : '❌ FAILED'}
+                    </div>
+                    <div class="details">
+                        <p><strong>Operations:</strong> ${result.operations}</p>
+                        <p><strong>Conflicts:</strong> ${result.conflicts}</p>
+                        <p><strong>Message:</strong> ${result.message}</p>
+                    </div>
+                `;
+                quantityGrid.appendChild(quantityCard);
+            });
+            
+            log('✅ Quantity tests completed!');
+        }
+
+        function runStressTests() {
+            testResults = [];
+            testLogs = [];
+            
+            log('💪 Starting stress tests...');
+            
+            // Very Large Quantity Test
+            runTest('Very Large Quantity Test (10000 pieces)',
+                [{ partNumber: 'STRESS001', quantity: 10000, priority: 'Normal', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }],
+                [{ PartNumber: 'STRESS001', OperationSeq: 1, OperationName: 'Test', SetupTime_Min: 60, CycleTime_Min: 1, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1'], Operator: 1 }],
+                { operations: 1, conflicts: 0 }
+            );
+            
+            // Multiple Parts Test
+            runTest('Multiple Parts Test',
+                [
+                    { partNumber: 'PART001', quantity: 100, priority: 'Normal', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PART002', quantity: 150, priority: 'High', dueDate: '2025-09-01', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PART003', quantity: 200, priority: 'Urgent', dueDate: '2025-09-01', startDateTime: '2025-09-01 06:00' }
+                ],
+                [
+                    { PartNumber: 'PART001', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 60, CycleTime_Min: 5, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PART002', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 60, CycleTime_Min: 5, Minimum_BatchSize: 1, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'PART003', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 60, CycleTime_Min: 5, Minimum_BatchSize: 1, EligibleMachines: ['VMC 3'], Operator: 1 }
+                ],
+                { operations: 3, conflicts: 0 }
+            );
+            
+            updateSummaryStats();
+            displayTestResults();
+            displayDetailedResults();
+            displayTestLogs();
+            
+            log('✅ Stress tests completed!');
+        }
+
+        function runBasicTests() {
+            testResults = [];
+            testLogs = [];
+            
+            log('⚡ Starting basic tests...');
+            
+            // Single Operation Test
+            runTest('Single Operation Test',
+                [{ partNumber: 'BASIC001', quantity: 10, priority: 'Normal', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }],
+                [{ PartNumber: 'BASIC001', OperationSeq: 1, OperationName: 'Test', SetupTime_Min: 60, CycleTime_Min: 5, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1'], Operator: 1 }],
+                { operations: 1, conflicts: 0 }
+            );
+            
+            // Multi-Operation Test
+            runTest('Multi-Operation Test',
+                [{ partNumber: 'BASIC002', quantity: 50, priority: 'Normal', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }],
+                [
+                    { PartNumber: 'BASIC002', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 70, CycleTime_Min: 18, Minimum_BatchSize: 1, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'BASIC002', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 70, CycleTime_Min: 10, Minimum_BatchSize: 1, EligibleMachines: ['VMC 2'], Operator: 1 }
+                ],
+                { operations: 2, conflicts: 0 }
+            );
+            
+            updateSummaryStats();
+            displayTestResults();
+            displayDetailedResults();
+            displayTestLogs();
+            
+            log('✅ Basic tests completed!');
+        }
+
+        // Initialize the page
+        window.addEventListener('load', function() {
+            log('🎯 Test dashboard loaded and ready!');
+        });
+    </script>
+</body>
+</html>

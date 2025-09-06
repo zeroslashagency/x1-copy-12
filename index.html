@@ -501,6 +501,92 @@
             border-bottom: 1px solid #e1e8ed;
         }
 
+        /* Enhanced Schedule Results Table Styles */
+        #resultsTable {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        #resultsTable th {
+            background: linear-gradient(135deg, #34495e, #2c3e50);
+            color: white;
+            padding: 15px 10px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        #resultsTable td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #ecf0f1;
+            font-size: 13px;
+        }
+
+        #resultsTable tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        #resultsTable tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        .status-success {
+            color: #27ae60;
+            font-weight: bold;
+        }
+
+        .status-warning {
+            color: #f39c12;
+            font-weight: bold;
+        }
+
+        .status-danger {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+
+        /* Priority-based table row colors */
+        #resultsTable tr.priority-urgent {
+            background-color: #ffebee !important;
+            border-left: 4px solid #e74c3c;
+        }
+
+        #resultsTable tr.priority-urgent:hover {
+            background-color: #ffcdd2 !important;
+        }
+
+        #resultsTable tr.priority-high {
+            background-color: #fff3e0 !important;
+            border-left: 4px solid #f39c12;
+        }
+
+        #resultsTable tr.priority-high:hover {
+            background-color: #ffe0b2 !important;
+        }
+
+        #resultsTable tr.priority-normal {
+            background-color: #e8f5e8 !important;
+            border-left: 4px solid #27ae60;
+        }
+
+        #resultsTable tr.priority-normal:hover {
+            background-color: #c8e6c9 !important;
+        }
+
+        #resultsTable tr.priority-low {
+            background-color: #f5f5f5 !important;
+            border-left: 4px solid #95a5a6;
+        }
+
+        #resultsTable tr.priority-low:hover {
+            background-color: #e0e0e0 !important;
+        }
+
         /* Prevent wrapping in specific table cells (dates, times, timing text) */
         .nowrap {
             white-space: nowrap;
@@ -1278,7 +1364,7 @@
                             <th>Priority</th>
                             <th>Batch ID</th>
                             <th>Batch Qty</th>
-                            <th>Operation Seq</th>
+                            <th>Op Seq</th>
                             <th>Operation Name</th>
                             <th>Machine</th>
                             <th>Person</th>
@@ -1288,6 +1374,7 @@
                             <th>Run End</th>
                             <th>Timing</th>
                             <th>Due Date</th>
+                            <th>Status</th>
                         </tr>
                     </thead>
                     <tbody id="resultsTableBody"></tbody>
@@ -1306,7 +1393,7 @@
             <button class="btn btn-success" onclick="runSchedule()">
                 ▶️ Run Schedule
             </button>
-            <button class="btn btn-secondary" onclick="exportToExcel()" id="exportBtn" disabled title="Export to Excel with 4 sheets: Output, Client_Out, Setup_Output, Output_2">
+            <button class="btn btn-secondary" onclick="exportToExcel()" id="exportBtn" disabled title="Export to Excel with 5 sheets: Input, Output, Output_2, Client_Out, Setup_Output">
                 ⬇️ Export Excel
             </button>
             <button class="btn btn-info" onclick="showExportStats()" id="statsBtn" disabled title="Show export statistics">
@@ -1365,8 +1452,7 @@
     <!-- Load other scripts -->
     <script src="app.js"></script>
     <script src="data.js"></script>
-    <script src="x10.js"></script>
-    <script src="x10-browser.js?v=4"></script>
+    <script src="x10-browser.js"></script>
     
     <script>
         // Initialize the app after checking authentication
@@ -2283,8 +2369,17 @@
                 // Batch splitting by priority and due constraints
                 const batches = splitOrderIntoBatches(order);
                 batches.forEach((batch, idx) => {
-                    const batchId = `${order.partNumber}-${idx + 1}`;
-                    const batchOrder = { ...order, quantity: batch.qty };
+                    const batchId = `B${String(idx + 1).padStart(2, '0')}`; // B01, B02, etc.
+                    
+                    // Format data correctly for the scheduling engine
+                    const batchOrder = {
+                        partNumber: order.partNumber,
+                        quantity: batch.qty,
+                        priority: order.priority,
+                        dueDate: order.dueDate,
+                        startDateTime: order.startDateTime || getNextShiftStart()
+                    };
+                    
                     const engineResult = runSchedulingInBrowser([batchOrder], operations);
                     const operationResults = engineResult.success ? engineResult.outputData.mainOutput.map(row => ({
                         OperationSeq: row[5],
@@ -4342,27 +4437,40 @@
 
             // Display results table
             if (scheduleResults.rows && scheduleResults.rows.length > 0) {
-                tbody.innerHTML = scheduleResults.rows.map(row => `
-                    <tr>
-                        <td>${row.PartNumber}</td>
-                        <td>${row.Order_Quantity}</td>
-                        <td>${row.Priority}</td>
-                        <td>${row.Batch_ID}</td>
-                        <td>${row.Batch_Qty}</td>
-                        <td>${row.OperationSeq}</td>
-                        <td>${row.OperationName}</td>
-                        <td>${row.Machine}</td>
-                        <td>${row.Person}</td>
-                        <td class="nowrap">${row.SetupStart}</td>
-                        <td class="nowrap">${row.SetupEnd}</td>
-                        <td class="nowrap">${row.RunStart}</td>
-                        <td class="nowrap">${row.RunEnd}</td>
-                        <td class="nowrap">${row.Timing}</td>
-                        <td class="nowrap">${row.DueDate}</td>
-                    </tr>
-                `).join('');
+                tbody.innerHTML = scheduleResults.rows.map(row => {
+                    // Check if due date is met
+                    const runEndDate = new Date(row.RunEnd);
+                    const dueDateObj = new Date(row.DueDate);
+                    const isOnTime = runEndDate <= dueDateObj;
+                    const statusClass = isOnTime ? 'status-success' : 'status-warning';
+                    const statusText = isOnTime ? '✅' : '⚠️';
+                    
+                    // Add priority-based row styling
+                    const priorityClass = `priority-${row.Priority.toLowerCase()}`;
+                    
+                    return `
+                        <tr class="${priorityClass}">
+                            <td>${row.PartNumber}</td>
+                            <td>${row.Order_Quantity}</td>
+                            <td>${row.Priority}</td>
+                            <td>${row.Batch_ID}</td>
+                            <td>${row.Batch_Qty}</td>
+                            <td>${row.OperationSeq}</td>
+                            <td>${row.OperationName}</td>
+                            <td>${row.Machine}</td>
+                            <td>${row.Person}</td>
+                            <td class="nowrap">${row.SetupStart}</td>
+                            <td class="nowrap">${row.SetupEnd}</td>
+                            <td class="nowrap">${row.RunStart}</td>
+                            <td class="nowrap">${row.RunEnd}</td>
+                            <td class="nowrap">${row.Timing}</td>
+                            <td class="nowrap">${row.DueDate}</td>
+                            <td class="${statusClass}">${statusText}</td>
+                        </tr>
+                    `;
+                }).join('');
             } else {
-                tbody.innerHTML = '<tr><td colspan="15" style="text-align: center; color: #888;">No results to display</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="16" style="text-align: center; color: #888;">No results to display</td></tr>';
             }
 
             resultsCard.style.display = 'block';
@@ -4645,7 +4753,7 @@
             newItems.forEach(item => {
                 window.OP_MASTER.push({
                     PartNumber: String(item.PartNumber).trim(),
-                    OperationSeq: parseInt(item.OperationSeq) || 0,
+                    OperationSeq: parseInt(item.OperationSeq) || 1, // Default to 1 instead of 0
                     OperationName: item.OperationName || '',
                     SetupTime_Min: parseFloat(item.SetupTime_Min) || 0,
                     Operator: item.Operator || '',

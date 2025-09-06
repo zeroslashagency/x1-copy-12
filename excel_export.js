@@ -1,6 +1,6 @@
 /**
  * Excel Export Module - Production Scheduler
- * Creates Excel files with 3 separate sheets: Output, Client_Out, Setup_Output
+ * Creates Excel files with 5 separate sheets: Input, Output, Output_2, Client_Out, Setup_Output
  * Uses SheetJS (XLSX) library for browser-based Excel generation
  */
 
@@ -10,7 +10,7 @@ class ExcelExporter {
     }
 
     /**
-     * Main export function - creates Excel file with 3 sheets
+     * Main export function - creates Excel file with 5 sheets
      * @param {Object} scheduleData - The schedule results object with rows array
      * @param {string} filename - Optional custom filename
      */
@@ -23,17 +23,19 @@ class ExcelExporter {
             // Create workbook
             const workbook = XLSX.utils.book_new();
 
-            // Generate the four sheets
+            // Generate the five sheets in correct order
+            const inputSheet = this.createInputSheet(scheduleData);
             const outputSheet = this.createOutputSheet(scheduleData.rows);
+            const output2Sheet = this.createOutput2Sheet(scheduleData.rows);
             const clientOutSheet = this.createClientOutSheet(scheduleData.rows);
             const setupOutputSheet = this.createSetupOutputSheet(scheduleData.rows);
-            const output2Sheet = this.createOutput2Sheet(scheduleData.rows);
 
-            // Add sheets to workbook
+            // Add sheets to workbook in correct order
+            XLSX.utils.book_append_sheet(workbook, inputSheet, "Input");
             XLSX.utils.book_append_sheet(workbook, outputSheet, "Output");
+            XLSX.utils.book_append_sheet(workbook, output2Sheet, "Output_2");
             XLSX.utils.book_append_sheet(workbook, clientOutSheet, "Client_Out");
             XLSX.utils.book_append_sheet(workbook, setupOutputSheet, "Setup_Output");
-            XLSX.utils.book_append_sheet(workbook, output2Sheet, "Output_2");
 
             // Generate filename if not provided
             if (!filename) {
@@ -118,6 +120,66 @@ class ExcelExporter {
     }
 
     /**
+     * Creates the Input sheet with input parameters used for scheduling
+     * Matches the exact format from Input.csv
+     * @param {Object} scheduleData - The schedule data object
+     * @returns {Object} XLSX worksheet object
+     */
+    createInputSheet(scheduleData) {
+        // Extract unique input parameters from the schedule data
+        const inputData = [];
+        
+        if (scheduleData.rows && scheduleData.rows.length > 0) {
+            // Group by PartNumber to get unique input parameters
+            const uniqueParts = {};
+            
+            scheduleData.rows.forEach(row => {
+                if (!uniqueParts[row.PartNumber]) {
+                    uniqueParts[row.PartNumber] = {
+                        PartNumber: row.PartNumber || '',
+                        OperationSeq: row.OperationSeq || 1,
+                        Order_Quantity: row.Order_Quantity || 0,
+                        priority: (row.Priority || 'normal').toLowerCase(),
+                        dueDate: row.DueDate || '',
+                        breakdownMachine: row.Machine || '',
+                        Breakdown_Machines_date_time: this.getBreakdownDateTime(row.Machine),
+                        StartDateTime: this.getStartDateTime(row.SetupStart),
+                        Holiday: this.getHolidayInfo(),
+                        Setup_Availability_Window: this.getSetupWindow(),
+                        Shift_1: this.getShift1(),
+                        Shift_2: this.getShift2(),
+                        Shift_3: this.getShift3()
+                    };
+                }
+            });
+            
+            // Convert to array format
+            inputData.push(...Object.values(uniqueParts));
+        }
+        
+        // If no data, add a sample row with headers
+        if (inputData.length === 0) {
+            inputData.push({
+                PartNumber: '',
+                OperationSeq: '',
+                Order_Quantity: '',
+                priority: '',
+                dueDate: '',
+                breakdownMachine: '',
+                Breakdown_Machines_date_time: '',
+                StartDateTime: '',
+                Holiday: '',
+                Setup_Availability_Window: '',
+                Shift_1: '',
+                Shift_2: '',
+                Shift_3: ''
+            });
+        }
+
+        return XLSX.utils.json_to_sheet(inputData);
+    }
+
+    /**
      * Creates the Client_Out sheet with simplified information for clients
      * @param {Array} rows - Array of schedule result rows
      * @returns {Object} XLSX worksheet object
@@ -181,6 +243,69 @@ class ExcelExporter {
         }));
 
         return XLSX.utils.json_to_sheet(output2Data);
+    }
+
+    /**
+     * Get breakdown date time for a machine
+     * @param {string} machine - Machine name
+     * @returns {string} Breakdown date time
+     */
+    getBreakdownDateTime(machine) {
+        // This would typically come from your breakdown settings
+        // For now, return empty or a placeholder
+        return '';
+    }
+
+    /**
+     * Get start date time from setup start
+     * @param {string} setupStart - Setup start time
+     * @returns {string} Start date time
+     */
+    getStartDateTime(setupStart) {
+        if (!setupStart) return '';
+        return this.formatDateForOutput(setupStart);
+    }
+
+    /**
+     * Get holiday information
+     * @returns {string} Holiday info
+     */
+    getHolidayInfo() {
+        // This would typically come from your holiday settings
+        return '';
+    }
+
+    /**
+     * Get setup availability window
+     * @returns {string} Setup window
+     */
+    getSetupWindow() {
+        // This would typically come from your settings
+        return '06:00-22:00';
+    }
+
+    /**
+     * Get shift 1 information
+     * @returns {string} Shift 1
+     */
+    getShift1() {
+        return '06:00-14:00';
+    }
+
+    /**
+     * Get shift 2 information
+     * @returns {string} Shift 2
+     */
+    getShift2() {
+        return '14:00-22:00';
+    }
+
+    /**
+     * Get shift 3 information
+     * @returns {string} Shift 3
+     */
+    getShift3() {
+        return '22:00-06:00';
     }
 
     /**
@@ -420,7 +545,7 @@ class ExcelExporter {
             totalRows: scheduleData.rows.length,
             uniqueParts: uniqueParts.size,
             totalOperations: totalOperations,
-            sheets: ['Output', 'Client_Out', 'Setup_Output', 'Output_2']
+            sheets: ['Input', 'Output', 'Output_2', 'Client_Out', 'Setup_Output']
         };
     }
 }
