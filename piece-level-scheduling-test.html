@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Piece-Level Scheduling with Natural RunEnd Flow</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border: 1px solid #e1e8ed;
+        }
+
+        .card h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #27ae60, #229954);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+        }
+
+        .test-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-size: 12px;
+        }
+
+        .results-table th {
+            background: linear-gradient(135deg, #34495e, #2c3e50);
+            color: white;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 11px;
+        }
+
+        .results-table td {
+            padding: 8px 6px;
+            border-bottom: 1px solid #ecf0f1;
+            font-size: 11px;
+        }
+
+        .results-table tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .results-table tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        .status-success {
+            color: #27ae60;
+            font-weight: bold;
+        }
+
+        .status-warning {
+            color: #f39c12;
+            font-weight: bold;
+        }
+
+        .runend-analysis {
+            background: #e8f5e8;
+            border: 1px solid #c3e6cb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .runend-analysis h4 {
+            color: #155724;
+            margin-bottom: 10px;
+        }
+
+        .runend-item {
+            background: white;
+            border: 1px solid #d4edda;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .piece-flow {
+            background: #fff3e0;
+            border: 1px solid #ffcc02;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .piece-flow h4 {
+            color: #e65100;
+            margin-bottom: 10px;
+        }
+
+        .piece-item {
+            background: white;
+            border: 1px solid #ffe0b2;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .test-scenario {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .scenario-header {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+        }
+
+        .success-message {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            color: #155724;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            color: #721c24;
+        }
+
+        .timeline-visual {
+            background: #f0f8ff;
+            border: 1px solid #b3d9ff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .timeline-visual h4 {
+            color: #0066cc;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔄 Piece-Level Scheduling with Natural RunEnd Flow</h1>
+            <p>Multi-Part, Multi-Batch Example: Op1 ≤ Op2 ≤ Op3 ≤ Op4 (Ascending RunEnd Times)</p>
+        </div>
+
+        <div class="card">
+            <h2>🎯 Test Scenarios</h2>
+            <div class="test-controls">
+                <button class="btn" onclick="runTest('q10-detailed')">Q10 Detailed Example</button>
+                <button class="btn" onclick="runTest('multi-part')">Multi-Part Example (A+B)</button>
+                <button class="btn" onclick="runTest('piece-flow')">Piece Flow Analysis</button>
+                <button class="btn btn-success" onclick="runTest('all')">Run All Tests</button>
+            </div>
+            
+            <div class="test-scenario">
+                <div class="scenario-header">📋 Test Categories</div>
+                <div><strong>Q10 Detailed:</strong> Your exact Q10 specification with step-by-step piece tracking</div>
+                <div><strong>Multi-Part:</strong> Part A (Q20) + Part B (Q10) with proper sequencing</div>
+                <div><strong>Piece Flow:</strong> Detailed analysis of piece-level handoffs and RunEnd timing</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 RunEnd Sequence Analysis</h2>
+            <div id="runendAnalysis">
+                <div class="loading">Run a test to see RunEnd sequence analysis...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🔄 Piece Flow Analysis</h2>
+            <div id="pieceFlowAnalysis">
+                <div class="loading">Run a test to see piece flow analysis...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>⏰ Timeline Visualization</h2>
+            <div id="timelineVisualization">
+                <div class="loading">Run a test to see timeline visualization...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Test Results</h2>
+            <div id="loadingResults" class="loading">
+                Select a test scenario to run...
+            </div>
+            <table class="results-table" id="resultsTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Part</th>
+                        <th>Qty</th>
+                        <th>Priority</th>
+                        <th>Batch</th>
+                        <th>Batch Qty</th>
+                        <th>Op</th>
+                        <th>Operation</th>
+                        <th>Machine</th>
+                        <th>Person</th>
+                        <th>Setup Start</th>
+                        <th>Setup End</th>
+                        <th>Run Start</th>
+                        <th>Run End</th>
+                        <th>Timing</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Load the corrected scheduling engine -->
+    <script src="x10-browser-corrected.js?v=4.0"></script>
+    
+    <script>
+        let currentTestResults = null;
+
+        // Test data configurations for piece-level scheduling
+        const testConfigs = {
+            'q10-detailed': {
+                orders: [
+                    { partNumber: 'PN1001', quantity: 10, priority: 'Normal', dueDate: '2025-09-03', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN1001', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 70, CycleTime_Min: 18, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PN1001', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 70, CycleTime_Min: 10, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN1001', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 70, CycleTime_Min: 1, EligibleMachines: ['VMC 3'], Operator: 1 },
+                    { PartNumber: 'PN1001', OperationSeq: 4, OperationName: 'Op4', SetupTime_Min: 70, CycleTime_Min: 1, EligibleMachines: ['VMC 4'], Operator: 1 }
+                ],
+                description: 'Q10 detailed example: Setup=70min, Cycles=18/10/1/1, Expected RunEnd: 10:10/10:20/10:21/11:19'
+            },
+            'multi-part': {
+                orders: [
+                    { partNumber: 'PNA', quantity: 20, priority: 'High', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PNB', quantity: 10, priority: 'Normal', dueDate: '2025-09-03', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PNA', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 60, CycleTime_Min: 12, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PNA', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 60, CycleTime_Min: 6, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'PNA', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 60, CycleTime_Min: 3, EligibleMachines: ['VMC 3'], Operator: 1 },
+                    { PartNumber: 'PNB', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 60, CycleTime_Min: 12, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PNB', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 60, CycleTime_Min: 6, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'PNB', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 60, CycleTime_Min: 3, EligibleMachines: ['VMC 3'], Operator: 1 }
+                ],
+                description: 'Multi-part example: Part A (Q20) + Part B (Q10), Expected: A finishes before B starts'
+            },
+            'piece-flow': {
+                orders: [
+                    { partNumber: 'PN2001', quantity: 5, priority: 'High', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN2001', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 30, CycleTime_Min: 10, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PN2001', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 30, CycleTime_Min: 5, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN2001', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 30, CycleTime_Min: 2, EligibleMachines: ['VMC 3'], Operator: 1 }
+                ],
+                description: 'Piece flow analysis: Q5 with detailed piece-by-piece tracking'
+            }
+        };
+
+        function runTest(testType) {
+            if (testType === 'all') {
+                runAllTests();
+                return;
+            }
+
+            const config = testConfigs[testType];
+            if (!config) {
+                console.error('Unknown test type:', testType);
+                return;
+            }
+
+            console.log(`🔄 Running ${testType} test: ${config.description}`);
+            
+            try {
+                const result = runSchedulingInBrowser(config.orders, config.operations);
+                
+                if (result.success) {
+                    currentTestResults = result;
+                    console.log(`✅ ${testType} test completed`);
+                    displayResults(result.outputData.mainOutput);
+                    analyzeRunEndSequence(result.outputData.mainOutput);
+                    analyzePieceFlow(result.outputData.mainOutput);
+                    visualizeTimeline(result.outputData.mainOutput);
+                } else {
+                    console.log(`❌ ${testType} test failed`);
+                    document.getElementById('loadingResults').innerHTML = '❌ Test failed';
+                }
+            } catch (error) {
+                console.error('❌ Error:', error);
+                document.getElementById('loadingResults').innerHTML = '❌ Error: ' + error.message;
+            }
+        }
+
+        function runAllTests() {
+            console.log('🔄 Running all piece-level scheduling tests...');
+            const testTypes = ['q10-detailed', 'multi-part', 'piece-flow'];
+            let allResults = [];
+
+            testTypes.forEach((testType, index) => {
+                setTimeout(() => {
+                    const config = testConfigs[testType];
+                    
+                    try {
+                        const result = runSchedulingInBrowser(config.orders, config.operations);
+                        
+                        if (result.success) {
+                            allResults = allResults.concat(result.outputData.mainOutput);
+                            console.log(`✅ ${testType} test completed`);
+                        }
+                    } catch (error) {
+                        console.error(`❌ ${testType} test error:`, error);
+                    }
+                    
+                    if (index === testTypes.length - 1) {
+                        // All tests completed
+                        currentTestResults = { success: true, outputData: { mainOutput: allResults } };
+                        displayResults(allResults);
+                        analyzeRunEndSequence(allResults);
+                        analyzePieceFlow(allResults);
+                        visualizeTimeline(allResults);
+                    }
+                }, index * 1000); // Stagger tests by 1 second
+            });
+        }
+
+        function displayResults(results) {
+            // Hide loading and show table
+            document.getElementById('loadingResults').style.display = 'none';
+            document.getElementById('resultsTable').style.display = 'table';
+            
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+            
+            results.forEach(row => {
+                const [partNumber, orderQty, priority, batchId, batchQty, opSeq, opName, machine, person, setupStart, setupEnd, runStart, runEnd, timing, dueDate] = row;
+                
+                const tr = document.createElement('tr');
+                
+                // Check if due date is met
+                const runEndDate = new Date(runEnd);
+                const dueDateObj = new Date(dueDate);
+                const isOnTime = runEndDate <= dueDateObj;
+                const statusClass = isOnTime ? 'status-success' : 'status-warning';
+                const statusText = isOnTime ? '✅' : '⚠️';
+                
+                tr.innerHTML = `
+                    <td>${partNumber}</td>
+                    <td>${orderQty}</td>
+                    <td>${priority}</td>
+                    <td>${batchId}</td>
+                    <td>${batchQty}</td>
+                    <td>${opSeq}</td>
+                    <td>${opName}</td>
+                    <td>${machine}</td>
+                    <td>${person}</td>
+                    <td>${setupStart}</td>
+                    <td>${setupEnd}</td>
+                    <td>${runStart}</td>
+                    <td>${runEnd}</td>
+                    <td>${timing}</td>
+                    <td>${dueDate}</td>
+                    <td class="${statusClass}">${statusText}</td>
+                `;
+                
+                tbody.appendChild(tr);
+            });
+        }
+
+        function analyzeRunEndSequence(results) {
+            const analysisDiv = document.getElementById('runendAnalysis');
+            analysisDiv.innerHTML = '';
+            
+            // Group by part and batch
+            const partBatches = {};
+            results.forEach(row => {
+                const partNumber = row[0];
+                const batchId = row[3];
+                const opSeq = row[5];
+                const runEnd = row[12];
+                
+                const key = `${partNumber}-${batchId}`;
+                if (!partBatches[key]) {
+                    partBatches[key] = [];
+                }
+                partBatches[key].push({ opSeq, runEnd });
+            });
+            
+            let analysisHtml = '';
+            Object.keys(partBatches).forEach(key => {
+                const operations = partBatches[key].sort((a, b) => a.opSeq - b.opSeq);
+                const [partNumber, batchId] = key.split('-');
+                
+                analysisHtml += `
+                    <div class="runend-analysis">
+                        <h4>${partNumber} ${batchId} - RunEnd Sequence Analysis</h4>
+                `;
+                
+                let isAscending = true;
+                let previousRunEnd = null;
+                
+                operations.forEach(op => {
+                    const runEndTime = new Date(op.runEnd);
+                    const runEndStr = runEndTime.toISOString().substring(11, 16); // HH:MM format
+                    
+                    let statusIcon = '✅';
+                    if (previousRunEnd && runEndTime < previousRunEnd) {
+                        statusIcon = '❌';
+                        isAscending = false;
+                    }
+                    
+                    analysisHtml += `
+                        <div class="runend-item">
+                            <strong>${statusIcon} Op${op.opSeq}:</strong> ${runEndStr} (${op.runEnd})
+                        </div>
+                    `;
+                    
+                    previousRunEnd = runEndTime;
+                });
+                
+                const overallStatus = isAscending ? '✅ ASCENDING ORDER' : '❌ SEQUENCE VIOLATION';
+                analysisHtml += `
+                        <div class="runend-item" style="background: ${isAscending ? '#d4edda' : '#f8d7da'}; border-color: ${isAscending ? '#c3e6cb' : '#f5c6cb'};">
+                            <strong>Overall Status:</strong> ${overallStatus}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            analysisDiv.innerHTML = analysisHtml;
+        }
+
+        function analyzePieceFlow(results) {
+            const analysisDiv = document.getElementById('pieceFlowAnalysis');
+            analysisDiv.innerHTML = '';
+            
+            // Group by part and batch for piece flow analysis
+            const partBatches = {};
+            results.forEach(row => {
+                const partNumber = row[0];
+                const batchId = row[3];
+                const opSeq = row[5];
+                const setupStart = row[9];
+                const setupEnd = row[10];
+                const runStart = row[11];
+                const runEnd = row[12];
+                const batchQty = row[4];
+                
+                const key = `${partNumber}-${batchId}`;
+                if (!partBatches[key]) {
+                    partBatches[key] = [];
+                }
+                partBatches[key].push({ opSeq, setupStart, setupEnd, runStart, runEnd, batchQty });
+            });
+            
+            let analysisHtml = '';
+            Object.keys(partBatches).forEach(key => {
+                const operations = partBatches[key].sort((a, b) => a.opSeq - b.opSeq);
+                const [partNumber, batchId] = key.split('-');
+                
+                analysisHtml += `
+                    <div class="piece-flow">
+                        <h4>${partNumber} ${batchId} - Piece Flow Analysis</h4>
+                `;
+                
+                operations.forEach((op, index) => {
+                    const setupStart = new Date(op.setupStart);
+                    const setupEnd = new Date(op.setupEnd);
+                    const runStart = new Date(op.runStart);
+                    const runEnd = new Date(op.runEnd);
+                    
+                    const setupDuration = Math.round((setupEnd - setupStart) / (1000 * 60)); // minutes
+                    const runDuration = Math.round((runEnd - runStart) / (1000 * 60)); // minutes
+                    const cycleTime = Math.round(runDuration / op.batchQty); // minutes per piece
+                    
+                    // Calculate piece-level timing
+                    const firstPieceReady = new Date(runStart.getTime() + cycleTime * 60000);
+                    const lastPieceReady = runEnd;
+                    
+                    analysisHtml += `
+                        <div class="piece-item">
+                            <strong>Op${op.opSeq}:</strong><br>
+                            Setup: ${setupStart.toISOString().substring(11, 16)} → ${setupEnd.toISOString().substring(11, 16)} (${setupDuration}min)<br>
+                            Run: ${runStart.toISOString().substring(11, 16)} → ${runEnd.toISOString().substring(11, 16)} (${runDuration}min total)<br>
+                            Cycle Time: ${cycleTime}min per piece<br>
+                            First Piece Ready: ${firstPieceReady.toISOString().substring(11, 16)}<br>
+                            Last Piece Ready: ${lastPieceReady.toISOString().substring(11, 16)}
+                        </div>
+                    `;
+                });
+                
+                analysisHtml += '</div>';
+            });
+            
+            analysisDiv.innerHTML = analysisHtml;
+        }
+
+        function visualizeTimeline(results) {
+            const timelineDiv = document.getElementById('timelineVisualization');
+            timelineDiv.innerHTML = '';
+            
+            // Group by part and batch
+            const partBatches = {};
+            results.forEach(row => {
+                const partNumber = row[0];
+                const batchId = row[3];
+                const opSeq = row[5];
+                const setupStart = row[9];
+                const setupEnd = row[10];
+                const runStart = row[11];
+                const runEnd = row[12];
+                
+                const key = `${partNumber}-${batchId}`;
+                if (!partBatches[key]) {
+                    partBatches[key] = [];
+                }
+                partBatches[key].push({ opSeq, setupStart, setupEnd, runStart, runEnd });
+            });
+            
+            let timelineHtml = '';
+            Object.keys(partBatches).forEach(key => {
+                const operations = partBatches[key].sort((a, b) => a.opSeq - b.opSeq);
+                const [partNumber, batchId] = key.split('-');
+                
+                timelineHtml += `
+                    <div class="timeline-visual">
+                        <h4>${partNumber} ${batchId} - Timeline Visualization</h4>
+                        <pre>
+                `;
+                
+                // Create ASCII timeline
+                const startTime = new Date('2025-09-01 06:00:00');
+                const endTime = new Date('2025-09-01 18:00:00');
+                const totalMinutes = (endTime - startTime) / (1000 * 60);
+                const minutesPerChar = totalMinutes / 100; // 100 characters wide
+                
+                operations.forEach(op => {
+                    const setupStart = new Date(op.setupStart);
+                    const setupEnd = new Date(op.setupEnd);
+                    const runStart = new Date(op.runStart);
+                    const runEnd = new Date(op.runEnd);
+                    
+                    const setupStartPos = Math.round((setupStart - startTime) / (1000 * 60) / minutesPerChar);
+                    const setupEndPos = Math.round((setupEnd - startTime) / (1000 * 60) / minutesPerChar);
+                    const runStartPos = Math.round((runStart - startTime) / (1000 * 60) / minutesPerChar);
+                    const runEndPos = Math.round((runEnd - startTime) / (1000 * 60) / minutesPerChar);
+                    
+                    let timeline = 'Op' + op.opSeq + ': ';
+                    for (let i = 0; i < 100; i++) {
+                        if (i >= setupStartPos && i < setupEndPos) {
+                            timeline += 'S'; // Setup
+                        } else if (i >= runStartPos && i < runEndPos) {
+                            timeline += 'R'; // Run
+                        } else {
+                            timeline += ' ';
+                        }
+                    }
+                    timeline += ` ${runEnd.toISOString().substring(11, 16)}`;
+                    timelineHtml += timeline + '\n';
+                });
+                
+                timelineHtml += `
+                        </pre>
+                        <div style="font-size: 10px; color: #666;">
+                            S = Setup, R = Run | Timeline: 06:00 to 18:00 (12 hours)
+                        </div>
+                    </div>
+                `;
+            });
+            
+            timelineDiv.innerHTML = timelineHtml;
+        }
+    </script>
+</body>
+</html>

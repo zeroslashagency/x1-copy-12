@@ -389,111 +389,268 @@ class CorrectedSchedulingEngine {
     };
   }
 
-  // Enhanced resource assignment with priority queueing and strict machine locking
+  // CORRECTED: Enhanced resource assignment with proper machine locking, person serialization, and sequence enforcement
   getAvailableResourcesWithQueueing(operationSeq, batchId, earliestStart, setupTimeMin, cycleTimeMin, batchQty, eligibleMachines, machineSchedule, operatorSchedule, priority, dueDate) {
     const conflicts = [];
-    let bestAssignment = null;
-    let earliestCompletion = null;
     
-    Logger.log(`[RESOURCE-QUEUEING] ${batchId} Op${operationSeq} (${priority} priority, due ${dueDate}) - Checking ${eligibleMachines.length} machines`);
+    Logger.log(`[CORRECTED-RESOURCE] ${batchId} Op${operationSeq} (${priority} priority, due ${dueDate}) - Enforcing strict rules`);
     
-    // Try each eligible machine
+    // STEP 1: Find available machine with proper locking
+    let selectedMachine = null;
+    let machineAvailableFrom = new Date(earliestStart);
+    
     for (const machine of eligibleMachines) {
-      // Calculate setup and run times
-      const setupStart = new Date(earliestStart);
-      const setupEnd = new Date(setupStart.getTime() + setupTimeMin * 60000);
-      const runStart = new Date(setupEnd);
-      const runEnd = new Date(runStart.getTime() + cycleTimeMin * batchQty * 60000);
+      const machineAvailability = this.findMachineAvailability(machine, earliestStart, setupTimeMin, cycleTimeMin, batchQty);
       
-      // Check if machine is available for the ENTIRE duration (setup + run)
-      if (this.isMachineAvailable(machine, setupStart, runEnd)) {
-        // Machine is available - find next available time if needed
-        const nextAvailableTime = this.findNextAvailableMachineTime(machine, setupStart, runEnd);
-        
-        if (nextAvailableTime.getTime() > setupStart.getTime()) {
-          // Machine is busy, need to wait
-          const adjustedSetupStart = nextAvailableTime;
-          const adjustedSetupEnd = new Date(adjustedSetupStart.getTime() + setupTimeMin * 60000);
-          const adjustedRunStart = new Date(adjustedSetupEnd);
-          const adjustedRunEnd = new Date(adjustedRunStart.getTime() + cycleTimeMin * batchQty * 60000);
-          
-          conflicts.push(`Machine ${machine} busy - delayed from ${setupStart.toISOString()} to ${adjustedSetupStart.toISOString()}`);
-          
-          // Find available operator for the adjusted time
-          const operator = this.findAvailableOperator(adjustedSetupStart, adjustedSetupEnd);
-          
-          if (operator) {
-            const assignment = {
-              selectedMachine: machine,
-              operator: operator,
-              setupStart: adjustedSetupStart.toISOString().replace('T', ' ').substring(0, 16),
-              setupEnd: adjustedSetupEnd.toISOString().replace('T', ' ').substring(0, 16),
-              runStart: adjustedRunStart.toISOString().replace('T', ' ').substring(0, 16),
-              runEnd: adjustedRunEnd.toISOString().replace('T', ' ').substring(0, 16),
-              timing: this.calculateTiming(adjustedSetupStart, adjustedRunEnd),
-              conflicts: conflicts
-            };
-            
-            // Choose this assignment if it's the earliest completion
-            if (!earliestCompletion || adjustedRunEnd < earliestCompletion) {
-              earliestCompletion = adjustedRunEnd;
-              bestAssignment = assignment;
-            }
-          }
-        } else {
-          // Machine is immediately available
-          const operator = this.findAvailableOperator(setupStart, setupEnd);
-          
-          if (operator) {
-            const assignment = {
-              selectedMachine: machine,
-              operator: operator,
-              setupStart: setupStart.toISOString().replace('T', ' ').substring(0, 16),
-              setupEnd: setupEnd.toISOString().replace('T', ' ').substring(0, 16),
-              runStart: runStart.toISOString().replace('T', ' ').substring(0, 16),
-              runEnd: runEnd.toISOString().replace('T', ' ').substring(0, 16),
-              timing: this.calculateTiming(setupStart, runEnd),
-              conflicts: []
-            };
-            
-            // This is the best assignment (immediate availability)
-            return assignment;
-          } else {
-            conflicts.push(`No operator available for ${machine} at ${setupStart.toISOString()}`);
-          }
-        }
+      if (machineAvailability.available) {
+        selectedMachine = machine;
+        machineAvailableFrom = machineAvailability.availableFrom;
+        Logger.log(`[MACHINE-LOCK] ${machine} available from ${machineAvailableFrom.toISOString()}`);
+        break;
       } else {
-        conflicts.push(`Machine ${machine} unavailable for entire duration`);
+        conflicts.push(`Machine ${machine} locked until ${machineAvailability.nextAvailable.toISOString()}`);
       }
     }
     
-    // Return best assignment found, or create a fallback
-    if (bestAssignment) {
-      Logger.log(`[RESOURCE-QUEUEING] ${batchId} Op${operationSeq} assigned to ${bestAssignment.selectedMachine} with ${bestAssignment.conflicts.length} conflicts`);
-      return bestAssignment;
+    if (!selectedMachine) {
+      // All machines busy - use first one with earliest availability
+      selectedMachine = eligibleMachines[0];
+      const fallbackAvailability = this.findMachineAvailability(selectedMachine, earliestStart, setupTimeMin, cycleTimeMin, batchQty);
+      machineAvailableFrom = fallbackAvailability.nextAvailable;
+      conflicts.push(`FALLBACK: All machines busy, using ${selectedMachine} from ${machineAvailableFrom.toISOString()}`);
     }
     
-    // Fallback: assign to first machine with delayed start
-    const fallbackMachine = eligibleMachines[0];
-    const fallbackStart = this.findNextAvailableMachineTime(fallbackMachine, earliestStart, new Date(earliestStart.getTime() + (setupTimeMin + cycleTimeMin * batchQty) * 60000));
-    const fallbackSetupEnd = new Date(fallbackStart.getTime() + setupTimeMin * 60000);
-    const fallbackRunStart = new Date(fallbackSetupEnd);
-    const fallbackRunEnd = new Date(fallbackRunStart.getTime() + cycleTimeMin * batchQty * 60000);
+    // STEP 2: Find available operator with proper serialization
+    let selectedOperator = null;
+    let operatorAvailableFrom = new Date(machineAvailableFrom);
     
-    const fallbackOperator = this.findAvailableOperator(fallbackStart, fallbackSetupEnd) || 'A';
+    // Try preferred operator first
+    const preferredOperator = this.getSequentialOperator(operationSeq, batchId);
+    const operatorAvailability = this.findOperatorAvailability(preferredOperator, machineAvailableFrom, setupTimeMin);
     
-    Logger.log(`[RESOURCE-QUEUEING] ${batchId} Op${operationSeq} FALLBACK assigned to ${fallbackMachine} starting ${fallbackStart.toISOString()}`);
+    if (operatorAvailability.available) {
+      selectedOperator = preferredOperator;
+      operatorAvailableFrom = operatorAvailability.availableFrom;
+      Logger.log(`[OPERATOR-SERIAL] ${preferredOperator} available from ${operatorAvailableFrom.toISOString()}`);
+    } else {
+      // Try alternative operators in same shift
+      const shiftOperators = this.getShiftOperators(machineAvailableFrom);
+      for (const operator of shiftOperators) {
+        const altAvailability = this.findOperatorAvailability(operator, machineAvailableFrom, setupTimeMin);
+        if (altAvailability.available) {
+          selectedOperator = operator;
+          operatorAvailableFrom = altAvailability.availableFrom;
+          conflicts.push(`Operator ${preferredOperator} busy, using ${operator} from ${operatorAvailableFrom.toISOString()}`);
+          break;
+        }
+      }
+      
+      if (!selectedOperator) {
+        // All operators busy - delay until next available
+        const earliestOperatorTime = this.findEarliestOperatorAvailability(machineAvailableFrom, setupTimeMin);
+        selectedOperator = earliestOperatorTime.operator;
+        operatorAvailableFrom = earliestOperatorTime.availableFrom;
+        conflicts.push(`All operators busy, delayed to ${operatorAvailableFrom.toISOString()}`);
+      }
+    }
+    
+    // STEP 3: Calculate final timing with proper sequencing
+    const finalStartTime = new Date(Math.max(machineAvailableFrom.getTime(), operatorAvailableFrom.getTime()));
+    const setupStart = finalStartTime;
+    const setupEnd = new Date(setupStart.getTime() + setupTimeMin * 60000);
+    const runStart = new Date(setupEnd);
+    const runEnd = new Date(runStart.getTime() + cycleTimeMin * batchQty * 60000);
+    
+    // STEP 4: Validate sequence integrity
+    const sequenceValidation = this.validateSequenceIntegrity(batchId, operationSeq, setupStart, runEnd);
+    if (!sequenceValidation.valid) {
+      conflicts.push(`SEQUENCE-VIOLATION: ${sequenceValidation.message}`);
+      // Adjust timing to maintain sequence
+      const adjustedStart = sequenceValidation.correctedStart;
+      const adjustedSetupEnd = new Date(adjustedStart.getTime() + setupTimeMin * 60000);
+      const adjustedRunStart = new Date(adjustedSetupEnd);
+      const adjustedRunEnd = new Date(adjustedRunStart.getTime() + cycleTimeMin * batchQty * 60000);
+      
+      Logger.log(`[SEQUENCE-FIX] ${batchId} Op${operationSeq} adjusted from ${setupStart.toISOString()} to ${adjustedStart.toISOString()}`);
+      
+      return {
+        selectedMachine: selectedMachine,
+        operator: selectedOperator,
+        setupStart: adjustedStart.toISOString().replace('T', ' ').substring(0, 16),
+        setupEnd: adjustedSetupEnd.toISOString().replace('T', ' ').substring(0, 16),
+        runStart: adjustedRunStart.toISOString().replace('T', ' ').substring(0, 16),
+        runEnd: adjustedRunEnd.toISOString().replace('T', ' ').substring(0, 16),
+        timing: this.calculateTiming(adjustedStart, adjustedRunEnd),
+        conflicts: conflicts
+      };
+    }
+    
+    Logger.log(`[CORRECTED-RESOURCE] ${batchId} Op${operationSeq} assigned to ${selectedMachine} with operator ${selectedOperator}`);
     
     return {
-      selectedMachine: fallbackMachine,
-      operator: fallbackOperator,
-      setupStart: fallbackStart.toISOString().replace('T', ' ').substring(0, 16),
-      setupEnd: fallbackSetupEnd.toISOString().replace('T', ' ').substring(0, 16),
-      runStart: fallbackRunStart.toISOString().replace('T', ' ').substring(0, 16),
-      runEnd: fallbackRunEnd.toISOString().replace('T', ' ').substring(0, 16),
-      timing: this.calculateTiming(fallbackStart, fallbackRunEnd),
-      conflicts: [`FALLBACK: All machines busy, delayed to ${fallbackStart.toISOString()}`]
+      selectedMachine: selectedMachine,
+      operator: selectedOperator,
+      setupStart: setupStart.toISOString().replace('T', ' ').substring(0, 16),
+      setupEnd: setupEnd.toISOString().replace('T', ' ').substring(0, 16),
+      runStart: runStart.toISOString().replace('T', ' ').substring(0, 16),
+      runEnd: runEnd.toISOString().replace('T', ' ').substring(0, 16),
+      timing: this.calculateTiming(setupStart, runEnd),
+      conflicts: conflicts
     };
+  }
+
+  // Helper function to find machine availability with proper locking
+  findMachineAvailability(machine, earliestStart, setupTimeMin, cycleTimeMin, batchQty) {
+    const bookings = this.machineSchedule[machine] || [];
+    const setupDuration = setupTimeMin * 60000;
+    const runDuration = cycleTimeMin * batchQty * 60000;
+    const totalDuration = setupDuration + runDuration;
+    
+    // Sort bookings by start time
+    const sortedBookings = bookings.sort((a, b) => new Date(a.start) - new Date(b.start));
+    
+    let candidateStart = new Date(earliestStart);
+    
+    for (const booking of sortedBookings) {
+      const bookingStart = new Date(booking.start);
+      const bookingEnd = new Date(booking.end);
+      
+      // Check if we can fit before this booking
+      if (candidateStart.getTime() + totalDuration <= bookingStart.getTime()) {
+        return {
+          available: true,
+          availableFrom: candidateStart,
+          nextAvailable: new Date(bookingEnd)
+        };
+      }
+      
+      // Otherwise, try to start after this booking ends
+      candidateStart = new Date(bookingEnd);
+    }
+    
+    // Check if we can start now
+    if (candidateStart.getTime() <= earliestStart.getTime()) {
+      return {
+        available: true,
+        availableFrom: earliestStart,
+        nextAvailable: new Date(earliestStart.getTime() + totalDuration)
+      };
+    }
+    
+    return {
+      available: false,
+      availableFrom: null,
+      nextAvailable: candidateStart
+    };
+  }
+
+  // Helper function to find operator availability with proper serialization
+  findOperatorAvailability(operator, earliestStart, setupTimeMin) {
+    const bookings = this.operatorSchedule[operator] || [];
+    const setupDuration = setupTimeMin * 60000;
+    
+    // Sort bookings by start time
+    const sortedBookings = bookings.sort((a, b) => new Date(a.start) - new Date(b.start));
+    
+    let candidateStart = new Date(earliestStart);
+    
+    for (const booking of sortedBookings) {
+      const bookingStart = new Date(booking.start);
+      const bookingEnd = new Date(booking.end);
+      
+      // Check if we can fit before this booking
+      if (candidateStart.getTime() + setupDuration <= bookingStart.getTime()) {
+        return {
+          available: true,
+          availableFrom: candidateStart,
+          nextAvailable: new Date(bookingEnd)
+        };
+      }
+      
+      // Otherwise, try to start after this booking ends
+      candidateStart = new Date(bookingEnd);
+    }
+    
+    // Check if we can start now
+    if (candidateStart.getTime() <= earliestStart.getTime()) {
+      return {
+        available: true,
+        availableFrom: earliestStart,
+        nextAvailable: new Date(earliestStart.getTime() + setupDuration)
+      };
+    }
+    
+    return {
+      available: false,
+      availableFrom: null,
+      nextAvailable: candidateStart
+    };
+  }
+
+  // Helper function to find earliest operator availability across all operators
+  findEarliestOperatorAvailability(earliestStart, setupTimeMin) {
+    let earliestTime = null;
+    let earliestOperator = null;
+    
+    CONFIG.OPERATORS.forEach(operator => {
+      const availability = this.findOperatorAvailability(operator, earliestStart, setupTimeMin);
+      if (availability.available) {
+        if (!earliestTime || availability.availableFrom < earliestTime) {
+          earliestTime = availability.availableFrom;
+          earliestOperator = operator;
+        }
+      }
+    });
+    
+    return {
+      operator: earliestOperator || 'A',
+      availableFrom: earliestTime || new Date(earliestStart.getTime() + 24 * 60 * 60 * 1000) // Next day fallback
+    };
+  }
+
+  // Helper function to validate sequence integrity
+  validateSequenceIntegrity(batchId, operationSeq, setupStart, runEnd) {
+    // Check if this is the first operation
+    if (operationSeq === 1) {
+      return { valid: true, message: 'First operation', correctedStart: setupStart };
+    }
+    
+    // Find previous operation for this batch
+    const previousOpSeq = operationSeq - 1;
+    const previousOperation = this.findPreviousOperation(batchId, previousOpSeq);
+    
+    if (!previousOperation) {
+      return { valid: true, message: 'No previous operation found', correctedStart: setupStart };
+    }
+    
+    const previousRunEnd = new Date(previousOperation.runEnd);
+    
+    // Check if current operation starts before previous operation ends
+    if (setupStart < previousRunEnd) {
+      const correctedStart = new Date(previousRunEnd);
+      return {
+        valid: false,
+        message: `Op${operationSeq} starts at ${setupStart.toISOString()} before Op${previousOpSeq} ends at ${previousRunEnd.toISOString()}`,
+        correctedStart: correctedStart
+      };
+    }
+    
+    return { valid: true, message: 'Sequence integrity maintained', correctedStart: setupStart };
+  }
+
+  // Helper function to find previous operation for sequence validation
+  findPreviousOperation(batchId, operationSeq) {
+    // Look in the batchSequences tracking
+    if (this.batchSequences && this.batchSequences[batchId]) {
+      const batchOps = this.batchSequences[batchId].operations || [];
+      const previousOp = batchOps.find(op => op.operationSeq === operationSeq);
+      return previousOp ? {
+        runEnd: previousOp.runEnd,
+        operationSeq: previousOp.operationSeq,
+        machine: previousOp.machine
+      } : null;
+    }
+    return null;
   }
 
   // Book machine resource
@@ -691,6 +848,11 @@ class CorrectedSchedulingEngine {
     const operatorSchedule = {}; // Track all operator bookings
     const batchSequences = {}; // Track operation sequences per batch
     
+    // Store references for helper functions
+    this.machineSchedule = machineSchedule;
+    this.operatorSchedule = operatorSchedule;
+    this.batchSequences = batchSequences;
+    
     // Initialize resource schedules
     CONFIG.MACHINES.forEach(machine => {
       machineSchedule[machine] = [];
@@ -776,7 +938,7 @@ class CorrectedSchedulingEngine {
           this.bookMachine(machineSchedule, selectedMachine, setupStart, runEnd);
           this.bookOperator(operatorSchedule, operator, setupStart, setupEnd);
           
-          // Update batch sequence
+          // Update batch sequence tracking
           batchSequences[batch.batchId].lastOperationEnd = new Date(runEnd);
           batchSequences[batch.batchId].operations.push({
             operationSeq,

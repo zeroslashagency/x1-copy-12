@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Corrected Scheduling Engine Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #27ae60 0%, #229954 100%);
+            color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border: 1px solid #e1e8ed;
+        }
+
+        .card h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            border-bottom: 2px solid #27ae60;
+            padding-bottom: 10px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #27ae60, #229954);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(39, 174, 96, 0.3);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+        }
+
+        .test-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-size: 12px;
+        }
+
+        .results-table th {
+            background: linear-gradient(135deg, #34495e, #2c3e50);
+            color: white;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 11px;
+        }
+
+        .results-table td {
+            padding: 8px 6px;
+            border-bottom: 1px solid #ecf0f1;
+            font-size: 11px;
+        }
+
+        .results-table tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .results-table tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        .status-success {
+            color: #27ae60;
+            font-weight: bold;
+        }
+
+        .status-warning {
+            color: #f39c12;
+            font-weight: bold;
+        }
+
+        .status-danger {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+
+        .validation-summary {
+            background: #e8f5e8;
+            border: 1px solid #c3e6cb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .validation-summary h4 {
+            color: #155724;
+            margin-bottom: 10px;
+        }
+
+        .conflict-analysis {
+            background: #ffebee;
+            border: 1px solid #e74c3c;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .conflict-analysis h4 {
+            color: #c62828;
+            margin-bottom: 10px;
+        }
+
+        .conflict-item {
+            background: white;
+            border: 1px solid #ffcdd2;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .machine-timeline {
+            background: #fff3e0;
+            border: 1px solid #ffcc02;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .machine-timeline h4 {
+            color: #e65100;
+            margin-bottom: 10px;
+        }
+
+        .timeline-item {
+            background: white;
+            border: 1px solid #ffe0b2;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .test-scenario {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .scenario-header {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+        }
+
+        .success-message {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            color: #155724;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✅ Corrected Scheduling Engine Test</h1>
+            <p>Testing: Machine Locking, Person Serialization, and Sequence Enforcement</p>
+        </div>
+
+        <div class="card">
+            <h2>🎯 Test Scenarios</h2>
+            <div class="test-controls">
+                <button class="btn" onclick="runTest('q10-example')">Q10 Example (Your Spec)</button>
+                <button class="btn" onclick="runTest('machine-conflict')">Machine Conflict Test</button>
+                <button class="btn" onclick="runTest('person-conflict')">Person Conflict Test</button>
+                <button class="btn" onclick="runTest('sequence-violation')">Sequence Violation Test</button>
+                <button class="btn btn-warning" onclick="runTest('all')">Run All Tests</button>
+            </div>
+            
+            <div class="test-scenario">
+                <div class="scenario-header">📋 Test Categories</div>
+                <div><strong>Q10 Example:</strong> Your exact specification with proper RunEnd sequencing</div>
+                <div><strong>Machine Conflict:</strong> Multiple batches competing for same machine</div>
+                <div><strong>Person Conflict:</strong> Operators with overlapping setup assignments</div>
+                <div><strong>Sequence Violation:</strong> Operations starting before previous ones finish</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>✅ Validation Results</h2>
+            <div id="validationResults">
+                <div class="loading">Run a test to see validation results...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🔍 Conflict Analysis</h2>
+            <div id="conflictAnalysis">
+                <div class="loading">Run a test to see conflict analysis...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Machine Timeline Analysis</h2>
+            <div id="machineTimeline">
+                <div class="loading">Run a test to see machine timeline analysis...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Test Results</h2>
+            <div id="loadingResults" class="loading">
+                Select a test scenario to run...
+            </div>
+            <table class="results-table" id="resultsTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Part</th>
+                        <th>Qty</th>
+                        <th>Priority</th>
+                        <th>Batch</th>
+                        <th>Batch Qty</th>
+                        <th>Op</th>
+                        <th>Operation</th>
+                        <th>Machine</th>
+                        <th>Person</th>
+                        <th>Setup Start</th>
+                        <th>Setup End</th>
+                        <th>Run Start</th>
+                        <th>Run End</th>
+                        <th>Timing</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Load the corrected scheduling engine -->
+    <script src="x10-browser-corrected.js?v=3.0"></script>
+    
+    <script>
+        let currentTestResults = null;
+
+        // Test data configurations
+        const testConfigs = {
+            'q10-example': {
+                orders: [
+                    { partNumber: 'PN1001', quantity: 10, priority: 'Normal', dueDate: '2025-09-03', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN1001', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 70, CycleTime_Min: 18, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PN1001', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 70, CycleTime_Min: 10, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN1001', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 70, CycleTime_Min: 1, EligibleMachines: ['VMC 3'], Operator: 1 },
+                    { PartNumber: 'PN1001', OperationSeq: 4, OperationName: 'Op4', SetupTime_Min: 70, CycleTime_Min: 1, EligibleMachines: ['VMC 4'], Operator: 1 }
+                ],
+                description: 'Q10 example with proper RunEnd sequencing: Op1→Op2→Op3→Op4'
+            },
+            'machine-conflict': {
+                orders: [
+                    { partNumber: 'PN2001', quantity: 200, priority: 'High', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' },
+                    { partNumber: 'PN2002', quantity: 300, priority: 'Normal', dueDate: '2025-09-03', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN2001', OperationSeq: 1, OperationName: 'High Op1', SetupTime_Min: 60, CycleTime_Min: 8, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PN2002', OperationSeq: 1, OperationName: 'Normal Op1', SetupTime_Min: 70, CycleTime_Min: 10, EligibleMachines: ['VMC 1'], Operator: 1 }
+                ],
+                description: 'Two batches competing for VMC 1 - should queue by priority'
+            },
+            'person-conflict': {
+                orders: [
+                    { partNumber: 'PN3001', quantity: 100, priority: 'High', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN3001', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 60, CycleTime_Min: 8, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PN3001', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 50, CycleTime_Min: 6, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN3001', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 40, CycleTime_Min: 4, EligibleMachines: ['VMC 3'], Operator: 1 }
+                ],
+                description: 'Same operator doing multiple setups - should serialize properly'
+            },
+            'sequence-violation': {
+                orders: [
+                    { partNumber: 'PN4001', quantity: 150, priority: 'Urgent', dueDate: '2025-09-02', startDateTime: '2025-09-01 06:00' }
+                ],
+                operations: [
+                    { PartNumber: 'PN4001', OperationSeq: 1, OperationName: 'Op1', SetupTime_Min: 80, CycleTime_Min: 12, EligibleMachines: ['VMC 1'], Operator: 1 },
+                    { PartNumber: 'PN4001', OperationSeq: 2, OperationName: 'Op2', SetupTime_Min: 60, CycleTime_Min: 8, EligibleMachines: ['VMC 2'], Operator: 1 },
+                    { PartNumber: 'PN4001', OperationSeq: 3, OperationName: 'Op3', SetupTime_Min: 40, CycleTime_Min: 6, EligibleMachines: ['VMC 1'], Operator: 1 }
+                ],
+                description: 'Op3 returns to VMC 1 - should wait for Op1 to complete'
+            }
+        };
+
+        function runTest(testType) {
+            if (testType === 'all') {
+                runAllTests();
+                return;
+            }
+
+            const config = testConfigs[testType];
+            if (!config) {
+                console.error('Unknown test type:', testType);
+                return;
+            }
+
+            console.log(`🧪 Running ${testType} test: ${config.description}`);
+            
+            try {
+                const result = runSchedulingInBrowser(config.orders, config.operations);
+                
+                if (result.success) {
+                    currentTestResults = result;
+                    console.log(`✅ ${testType} test completed`);
+                    displayResults(result.outputData.mainOutput);
+                    displayValidationResults(result.validation);
+                    analyzeConflicts(result.outputData.mainOutput);
+                    analyzeMachineTimelines(result.outputData.mainOutput);
+                } else {
+                    console.log(`❌ ${testType} test failed`);
+                    document.getElementById('loadingResults').innerHTML = '❌ Test failed';
+                }
+            } catch (error) {
+                console.error('❌ Error:', error);
+                document.getElementById('loadingResults').innerHTML = '❌ Error: ' + error.message;
+            }
+        }
+
+        function runAllTests() {
+            console.log('🧪 Running all corrected scheduling tests...');
+            const testTypes = ['q10-example', 'machine-conflict', 'person-conflict', 'sequence-violation'];
+            let allResults = [];
+            let allValidations = [];
+
+            testTypes.forEach((testType, index) => {
+                setTimeout(() => {
+                    const config = testConfigs[testType];
+                    
+                    try {
+                        const result = runSchedulingInBrowser(config.orders, config.operations);
+                        
+                        if (result.success) {
+                            allResults = allResults.concat(result.outputData.mainOutput);
+                            allValidations.push(result.validation);
+                            console.log(`✅ ${testType} test completed`);
+                        }
+                    } catch (error) {
+                        console.error(`❌ ${testType} test error:`, error);
+                    }
+                    
+                    if (index === testTypes.length - 1) {
+                        // All tests completed
+                        currentTestResults = { success: true, outputData: { mainOutput: allResults }, validation: allValidations };
+                        displayResults(allResults);
+                        displayValidationResults(allValidations);
+                        analyzeConflicts(allResults);
+                        analyzeMachineTimelines(allResults);
+                    }
+                }, index * 1000); // Stagger tests by 1 second
+            });
+        }
+
+        function displayResults(results) {
+            // Hide loading and show table
+            document.getElementById('loadingResults').style.display = 'none';
+            document.getElementById('resultsTable').style.display = 'table';
+            
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+            
+            results.forEach(row => {
+                const [partNumber, orderQty, priority, batchId, batchQty, opSeq, opName, machine, person, setupStart, setupEnd, runStart, runEnd, timing, dueDate] = row;
+                
+                const tr = document.createElement('tr');
+                
+                // Check if due date is met
+                const runEndDate = new Date(runEnd);
+                const dueDateObj = new Date(dueDate);
+                const isOnTime = runEndDate <= dueDateObj;
+                const statusClass = isOnTime ? 'status-success' : 'status-warning';
+                const statusText = isOnTime ? '✅' : '⚠️';
+                
+                tr.innerHTML = `
+                    <td>${partNumber}</td>
+                    <td>${orderQty}</td>
+                    <td>${priority}</td>
+                    <td>${batchId}</td>
+                    <td>${batchQty}</td>
+                    <td>${opSeq}</td>
+                    <td>${opName}</td>
+                    <td>${machine}</td>
+                    <td>${person}</td>
+                    <td>${setupStart}</td>
+                    <td>${setupEnd}</td>
+                    <td>${runStart}</td>
+                    <td>${runEnd}</td>
+                    <td>${timing}</td>
+                    <td>${dueDate}</td>
+                    <td class="${statusClass}">${statusText}</td>
+                `;
+                
+                tbody.appendChild(tr);
+            });
+        }
+
+        function displayValidationResults(validations) {
+            const resultsDiv = document.getElementById('validationResults');
+            resultsDiv.innerHTML = '';
+            
+            let resultsHtml = '';
+            
+            if (Array.isArray(validations)) {
+                // Multiple validations from all tests
+                const totalConflicts = validations.reduce((sum, v) => sum + (v.summary?.totalConflicts || 0), 0);
+                const totalWarnings = validations.reduce((sum, v) => sum + (v.summary?.warnings || 0), 0);
+                const totalCritical = validations.reduce((sum, v) => sum + (v.summary?.criticalConflicts || 0), 0);
+                
+                if (totalConflicts === 0) {
+                    resultsHtml = `
+                        <div class="success-message">
+                            <h4>🎉 All Tests Passed!</h4>
+                            <div class="timeline-item">
+                                <strong>Total Conflicts:</strong> ${totalConflicts}<br>
+                                <strong>Critical Conflicts:</strong> ${totalCritical}<br>
+                                <strong>Warnings:</strong> ${totalWarnings}<br>
+                                <strong>Tests Run:</strong> ${validations.length}<br>
+                                <strong>Status:</strong> ✅ All scheduling rules enforced correctly!
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultsHtml = `
+                        <div class="error-message">
+                            <h4>⚠️ Issues Found</h4>
+                            <div class="timeline-item">
+                                <strong>Total Conflicts:</strong> ${totalConflicts}<br>
+                                <strong>Critical Conflicts:</strong> ${totalCritical}<br>
+                                <strong>Warnings:</strong> ${totalWarnings}<br>
+                                <strong>Tests Run:</strong> ${validations.length}
+                            </div>
+                        </div>
+                    `;
+                }
+            } else if (validations) {
+                // Single validation
+                if (validations.valid) {
+                    resultsHtml = `
+                        <div class="success-message">
+                            <h4>✅ Validation Passed</h4>
+                            <div class="timeline-item">
+                                <strong>Valid Schedule:</strong> ✅ YES<br>
+                                <strong>Total Conflicts:</strong> ${validations.summary?.totalConflicts || 0}<br>
+                                <strong>Critical Conflicts:</strong> ${validations.summary?.criticalConflicts || 0}<br>
+                                <strong>Warnings:</strong> ${validations.summary?.warnings || 0}<br>
+                                <strong>Machines Checked:</strong> ${validations.summary?.machinesChecked || 0}<br>
+                                <strong>Operators Checked:</strong> ${validations.summary?.operatorsChecked || 0}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultsHtml = `
+                        <div class="error-message">
+                            <h4>❌ Validation Failed</h4>
+                            <div class="timeline-item">
+                                <strong>Valid Schedule:</strong> ❌ NO<br>
+                                <strong>Total Conflicts:</strong> ${validations.summary?.totalConflicts || 0}<br>
+                                <strong>Critical Conflicts:</strong> ${validations.summary?.criticalConflicts || 0}<br>
+                                <strong>Warnings:</strong> ${validations.summary?.warnings || 0}
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+            
+            resultsDiv.innerHTML = resultsHtml || '<div class="timeline-item">No validation data available</div>';
+        }
+
+        function analyzeConflicts(results) {
+            const analysisDiv = document.getElementById('conflictAnalysis');
+            analysisDiv.innerHTML = '';
+            
+            let analysisHtml = '';
+            
+            // Analyze machine conflicts
+            const machineUsage = {};
+            results.forEach(row => {
+                const machine = row[7];
+                const batchId = row[3];
+                const opSeq = row[5];
+                const setupStart = row[9];
+                const runEnd = row[12];
+                
+                if (!machineUsage[machine]) {
+                    machineUsage[machine] = [];
+                }
+                machineUsage[machine].push({ batchId, opSeq, setupStart, runEnd });
+            });
+            
+            // Check for overlaps
+            let hasConflicts = false;
+            Object.keys(machineUsage).forEach(machine => {
+                const operations = machineUsage[machine];
+                operations.sort((a, b) => new Date(a.setupStart) - new Date(b.setupStart));
+                
+                for (let i = 0; i < operations.length - 1; i++) {
+                    const current = operations[i];
+                    const next = operations[i + 1];
+                    
+                    const currentEnd = new Date(current.runEnd);
+                    const nextStart = new Date(next.setupStart);
+                    
+                    if (nextStart < currentEnd) {
+                        hasConflicts = true;
+                        analysisHtml += `
+                            <div class="conflict-item">
+                                <strong>❌ MACHINE CONFLICT:</strong> ${machine}<br>
+                                ${current.batchId} Op${current.opSeq} ends at ${current.runEnd}<br>
+                                ${next.batchId} Op${next.opSeq} starts at ${next.setupStart}<br>
+                                <span style="color: #e74c3c;">OVERLAP DETECTED!</span>
+                            </div>
+                        `;
+                    }
+                }
+            });
+            
+            if (!hasConflicts) {
+                analysisHtml = `
+                    <div class="success-message">
+                        <h4>✅ No Conflicts Detected</h4>
+                        <div class="timeline-item">
+                            All machines are properly locked and sequenced.<br>
+                            No overlapping operations found.<br>
+                            Machine locking rules are working correctly!
+                        </div>
+                    </div>
+                `;
+            }
+            
+            analysisDiv.innerHTML = analysisHtml;
+        }
+
+        function analyzeMachineTimelines(results) {
+            const timelineDiv = document.getElementById('machineTimeline');
+            timelineDiv.innerHTML = '';
+            
+            // Group by machine
+            const machineTimelines = {};
+            results.forEach(row => {
+                const machine = row[7];
+                const batchId = row[3];
+                const opSeq = row[5];
+                const setupStart = row[9];
+                const setupEnd = row[10];
+                const runStart = row[11];
+                const runEnd = row[12];
+                
+                if (!machineTimelines[machine]) {
+                    machineTimelines[machine] = [];
+                }
+                machineTimelines[machine].push({ batchId, opSeq, setupStart, setupEnd, runStart, runEnd });
+            });
+            
+            let timelineHtml = '';
+            Object.keys(machineTimelines).forEach(machine => {
+                const operations = machineTimelines[machine].sort((a, b) => new Date(a.setupStart) - new Date(b.setupStart));
+                
+                timelineHtml += `
+                    <div class="machine-timeline">
+                        <h4>${machine} Timeline</h4>
+                `;
+                
+                operations.forEach(op => {
+                    timelineHtml += `
+                        <div class="timeline-item">
+                            <strong>${op.batchId} Op${op.opSeq}:</strong><br>
+                            Setup: ${op.setupStart} → ${op.setupEnd}<br>
+                            Run: ${op.runStart} → ${op.runEnd}
+                        </div>
+                    `;
+                });
+                
+                timelineHtml += '</div>';
+            });
+            
+            timelineDiv.innerHTML = timelineHtml;
+        }
+    </script>
+</body>
+</html>
